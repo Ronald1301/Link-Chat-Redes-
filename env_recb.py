@@ -6,9 +6,14 @@ from mac import Mac
 from frames import Frame
 from fragmentation import FragmentManager
 
+
 class Envio_recibo_frames:
-    def __init__(self, tipo_protocolo=0x8888):
-        resultado = Mac.obtener_mac()
+    def __init__(self, tipo_protocolo=0x8888, interfaz = None):
+        if interfaz is not None:
+            resultado = Mac.obtener_mac(interfaz)
+        else:
+            resultado = Mac.obtener_mac()
+            
         if resultado[0] is None:
             raise Exception(resultado[1])
         self.interfaz, self.mac_ori = resultado

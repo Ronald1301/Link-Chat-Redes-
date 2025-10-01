@@ -8,6 +8,7 @@ import os
 import json
 from env_recb import Envio_recibo_frames
 from files import FileTransfer
+from mac import Mac  # Importar la clase Mac
 
 # Configuración para VirtualBox - evitar problemas gráficos
 os.environ['TK_SILENCE_DEPRECATION'] = '1'
@@ -16,7 +17,7 @@ class ChatMinimalTkinter:
     def __init__(self, root):
         self.root = root
         self.root.title("Chat Ethernet")
-        self.root.geometry("500x450")  # Un poco más alto para los botones de archivo
+        self.root.geometry("500x500")  # Un poco más alto para los botones de archivo
         
         # Configuración minimalista
         self.root.resizable(True, True)
@@ -29,10 +30,10 @@ class ChatMinimalTkinter:
         self.archivo_contactos = "contactos_minimal.json"
         self.file_transfer = FileTransfer(self)
         self.archivo_seleccionado = None
+        self.interfaz_seleccionada = None
         
         self.cargar_contactos()
         self.crear_interfaz_minimal()
-        self.iniciar_comunicador()
 
     def send_message(self, mensaje, dest_mac):
         """Envía un mensaje (necesario para FileTransfer)"""
@@ -72,6 +73,39 @@ class ChatMinimalTkinter:
         # Frame principal simple
         main_frame = tk.Frame(self.root, bg='white')
         main_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        interfaz_frame = tk.Frame(main_frame, bg='white')
+        interfaz_frame.pack(fill=tk.X, pady=5)
+        
+        tk.Label(interfaz_frame, text="Interfaz:", bg='white').pack(side=tk.LEFT)
+        
+        # Obtener interfaces disponibles
+        interfaces = Mac.obtener_interfaces_fisicas()
+        
+        if not interfaces:
+            tk.Label(interfaz_frame, text="No hay interfaces disponibles", bg='white', fg='red').pack(side=tk.LEFT)
+            return
+        
+        self.interfaz_var = tk.StringVar()
+        self.interfaz_combo = ttk.Combobox(
+            interfaz_frame, 
+            textvariable=self.interfaz_var,
+            values=interfaces,
+            state="readonly",
+            width=20
+        )
+        self.interfaz_combo.pack(side=tk.LEFT, padx=5)
+        self.interfaz_combo.set(interfaces[0])  # Seleccionar primera por defecto
+        
+        # Botón para conectar
+        self.btn_conectar = tk.Button(
+            interfaz_frame,
+            text="Conectar",
+            command=self.conectar_interfaz,
+            width=10
+        )
+        self.btn_conectar.pack(side=tk.LEFT, padx=5)
+        
         
         # Información básica
         info_frame = tk.Frame(main_frame, bg='white')
@@ -138,9 +172,15 @@ class ChatMinimalTkinter:
         self.actualizar_destinos()
         
         # Botón para agregar contacto
-        tk.Button(control_frame, text="+", command=self.agregar_contacto_simple, 
-                 width=2).pack(side=tk.LEFT, padx=2)
-        
+        self.btn_agregar_contacto = tk.Button(
+            control_frame, 
+            text="+", 
+            command=self.agregar_contacto_simple, 
+            width=2,
+            state=tk.DISABLED  # Deshabilitado hasta conectar
+        )
+        self.btn_agregar_contacto.pack(side=tk.LEFT, padx=2)
+
         # Entrada de mensaje
         msg_frame = tk.Frame(main_frame, bg='white')
         msg_frame.pack(fill=tk.X, pady=2)
@@ -155,13 +195,42 @@ class ChatMinimalTkinter:
         btn_frame = tk.Frame(main_frame, bg='white')
         btn_frame.pack(fill=tk.X, pady=5)
         
-        tk.Button(btn_frame, text="Enviar", command=self.enviar_mensaje, width=8).pack(side=tk.LEFT, padx=2)
+        self.btn_enviar = tk.Button(
+            btn_frame, 
+            text="Enviar", 
+            command=self.enviar_mensaje, 
+            width=8,
+            state=tk.DISABLED  # Deshabilitado hasta conectar
+        )
+        self.btn_enviar.pack(side=tk.LEFT, padx=2)
+
         tk.Button(btn_frame, text="Limpiar", command=self.limpiar_mensajes, width=8).pack(side=tk.LEFT, padx=2)
         tk.Button(btn_frame, text="Salir", command=self.salir, width=8).pack(side=tk.LEFT, padx=2)
         
         # Bind selección de destino
         self.destino_combo.bind('<<ListboxSelect>>', self.seleccionar_destino)
     
+    def conectar_interfaz(self):
+        """Conecta usando la interfaz seleccionada"""
+        interfaz = self.interfaz_var.get()
+        if not interfaz:
+            messagebox.showerror("Error", "Selecciona una interfaz")
+            return
+        
+        self.interfaz_seleccionada = interfaz
+        self.btn_conectar.config(state=tk.DISABLED)
+        self.interfaz_combo.config(state=tk.DISABLED)
+        self.actualizar_estado(f"Conectando a {interfaz}...")
+        
+        self.iniciar_comunicador()
+    
+    def habilitar_controles_chat(self):
+        """Habilita todos los controles una vez conectado"""
+        self.btn_seleccionar.config(state=tk.NORMAL)
+        self.btn_agregar_contacto.config(state=tk.NORMAL)
+        self.mensaje_entry.config(state=tk.NORMAL)
+        self.btn_enviar.config(state=tk.NORMAL)
+
     def seleccionar_archivo(self):
         """Selecciona un archivo para enviar"""
         file_path = filedialog.askopenfilename(
@@ -274,17 +343,22 @@ class ChatMinimalTkinter:
                     self.root.after(0, lambda: messagebox.showerror("Error", "Ejecuta con sudo!"))
                     return
                 
-                self.com = Envio_recibo_frames()
+                self.com = Envio_recibo_frames(interfaz=self.interfaz_seleccionada)
                 mac_propia = self.com.mac_ori
                 
-                self.root.after(0, lambda: self.actualizar_estado(f"Conectado - MAC: {mac_propia}"))
-                self.root.after(0, lambda: self.mostrar_mensaje("Sistema", f"Conectado - Mi MAC: {mac_propia}"))
+                self.root.after(0, self.habilitar_controles_chat)
+                self.root.after(0, lambda: self.actualizar_estado(f"Conectado - {self.interfaz_seleccionada} - MAC: {mac_propia}"))
+                self.root.after(0, lambda: self.mostrar_mensaje("Sistema", f"Conectado - Interfaz: {self.interfaz_seleccionada} - Mi MAC: {mac_propia}"))
                 
                 # Modificar el escuchador para manejar archivos
                 self.com.escuchar(callback=self.manejar_mensaje_recibido)
                 
             except Exception as e:
                 self.root.after(0, lambda: self.mostrar_mensaje("Error", str(e)))
+                self.root.after(0, lambda: self.actualizar_estado(f"Error: {str(e)}"))
+                # Rehabilitar el botón de conectar en caso de error
+                self.root.after(0, lambda: self.btn_conectar.config(state=tk.NORMAL))
+                self.root.after(0, lambda: self.interfaz_combo.config(state="readonly"))
         
         threading.Thread(target=_iniciar, daemon=True).start()
     
