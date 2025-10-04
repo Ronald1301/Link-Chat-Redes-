@@ -6,22 +6,49 @@ import time
 import sys
 import os
 import json
+from frames import Tipo_Mensaje
 from env_recb import Envio_recibo_frames
 from files import FileTransfer
-from mac import Mac  # Importar la clase Mac
+from mac import Mac 
+
+if not os.path.exists("descargas"):
+    os.makedirs("descargas")
 
 # Configuración para VirtualBox - evitar problemas gráficos
 os.environ['TK_SILENCE_DEPRECATION'] = '1'
 
+def configurar_tkinter():
+    import tkinter as tk
+    tk.Button._default_state = 'normal'
+    
+configurar_tkinter()
+
 class ChatMinimalTkinter:
     def __init__(self, root):
         self.root = root
-        self.root.title("Chat Ethernet")
-        self.root.geometry("500x500")  # Un poco más alto para los botones de archivo
+        self.root.title("Link Chat")
+        self.root.geometry("1000x1000")  # Un poco más alto para los botones de archivo
         
         # Configuración minimalista
         self.root.resizable(True, True)
-        self.root.configure(bg='white')
+        self.root.configure(bg='#2F2F2F')
+
+        self.bg_color = '#2F2F2F'
+        self.fg_color = 'white'
+        self.entry_bg = '#404040'
+        self.button_bg  = '#505050'
+        self.border_color = 'black'
+        self.font_size = 11
+
+         
+        # Colores para burbujas de chat
+        self.bubble_me_bg = '#0084FF'  # Azul para mis mensajes
+        self.bubble_other_bg = '#404040'  # Gris para mensajes de otros
+        self.bubble_system_bg = '#FF6B00'  # Naranja para mensajes del sistema
+
+
+        self.usuario=None
+        
         
         # Variables
         self.com = None
@@ -31,21 +58,15 @@ class ChatMinimalTkinter:
         self.file_transfer = FileTransfer(self)
         self.archivo_seleccionado = None
         self.interfaz_seleccionada = None
+        self.dic_usuarios = {"todos": "ff:ff:ff:ff:ff:ff"}
+        self.stop_event = None
+
+
+        self.contador_mensajes = 0  # INICIALIZAR contador_mensajes
+        self.ejecutando_recepcion = False  # Control para el hilo de recepción
         
         self.cargar_contactos()
         self.crear_interfaz_minimal()
-
-    def send_message(self, mensaje, dest_mac):
-        """Envía un mensaje (necesario para FileTransfer)"""
-        if not self.com:
-            return False
-        
-        try:
-            resultado = self.com.enviar_mensaje(dest_mac, mensaje)
-            return resultado > 0
-        except Exception as e:
-            print(f"Error en send_message: {e}")
-            return False
         
     def cargar_contactos(self):
         """Carga contactos básicos"""
@@ -67,23 +88,21 @@ class ChatMinimalTkinter:
         except:
             pass
     
-    def crear_interfaz_minimal(self):
-        """Interfaz ultra-minimalista con botones de archivo"""
-        
+    def crear_interfaz_minimal(self):        
         # Frame principal simple
-        main_frame = tk.Frame(self.root, bg='white')
+        main_frame = tk.Frame(self.root, bg=self.bg_color, highlightbackground=self.border_color, highlightthickness=1)
         main_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        interfaz_frame = tk.Frame(main_frame, bg='white')
+        interfaz_frame = tk.Frame(main_frame, bg=self.bg_color, highlightbackground=self.border_color, highlightthickness=1)
         interfaz_frame.pack(fill=tk.X, pady=5)
         
-        tk.Label(interfaz_frame, text="Interfaz:", bg='white').pack(side=tk.LEFT)
+        tk.Label(interfaz_frame, text="Interfaz:", bg=self.bg_color,  fg=self.fg_color, font=('Arial', self.font_size)).pack(side=tk.LEFT)
         
         # Obtener interfaces disponibles
         interfaces = Mac.obtener_interfaces_fisicas()
         
         if not interfaces:
-            tk.Label(interfaz_frame, text="No hay interfaces disponibles", bg='white', fg='red').pack(side=tk.LEFT)
+            tk.Label(interfaz_frame, text="No hay interfaces disponibles", bg=self.bg_color, fg='red' , font=('Arial', self.font_size)).pack(side=tk.LEFT)
             return
         
         self.interfaz_var = tk.StringVar()
@@ -102,16 +121,21 @@ class ChatMinimalTkinter:
             interfaz_frame,
             text="Conectar",
             command=self.conectar_interfaz,
-            width=10
+            width=10,
+            bg=self.button_bg,
+            fg=self.fg_color,
+            font=('Arial', self.font_size),
+            relief="solid",
+            bd=1
         )
         self.btn_conectar.pack(side=tk.LEFT, padx=5)
         
         
         # Información básica
-        info_frame = tk.Frame(main_frame, bg='white')
+        info_frame = tk.Frame(main_frame, bg=self.bg_color, highlightbackground=self.border_color, highlightthickness=1)
         info_frame.pack(fill=tk.X, pady=2)
         
-        self.status_label = tk.Label(info_frame, text="Desconectado", bg='white', fg='red')
+        self.status_label = tk.Label(info_frame, text="Desconectado", bg=self.bg_color, fg='red', font=('Arial', self.font_size))
         self.status_label.pack(side=tk.LEFT)
         
         # Área de mensajes (más pequeña)
@@ -120,13 +144,55 @@ class ChatMinimalTkinter:
             wrap=tk.WORD,
             width=50,
             height=12,
-            font=('Arial', 9)
+            font=('Arial', self.font_size),
+            bg=self.bg_color,
+            fg=self.fg_color,
+            insertbackground=self.fg_color,  # Color del cursor
+            relief="solid",
+            bd=1
         )
         self.text_area.pack(fill=tk.BOTH, expand=True, pady=5)
         self.text_area.config(state=tk.DISABLED)
+
+        # Entrada de mensaje
+        msg_frame = tk.Frame(main_frame, bg=self.bg_color, highlightbackground=self.border_color, highlightthickness=1)
+        msg_frame.pack(fill=tk.X, pady=2)
+        
+        tk.Label(msg_frame, text="Mensaje:" ,bg=self.bg_color, fg=self.fg_color, font=('Arial', self.font_size)).pack(side=tk.LEFT)
+        input_frame = tk.Frame(msg_frame, bg=self.bg_color)
+        input_frame.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
+        self.mensaje_var = tk.StringVar()
+        self.mensaje_entry = tk.Text(
+            input_frame, 
+            height=3,  # Hacer el campo más alto (3 líneas)
+            font=('Arial', self.font_size),
+            bg=self.entry_bg,
+            fg=self.fg_color,
+            insertbackground=self.fg_color,
+            relief="solid",
+            bd=1,
+            wrap=tk.WORD
+        )
+        self.mensaje_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self.mensaje_entry.bind('<Return>', self.enviar_mensaje)
+        self.mensaje_entry.bind('<Shift-Return>', self.insertar_nueva_linea)  # Permitir nueva línea con Shift+Enter
+        
+        self.btn_enviar = tk.Button(
+            input_frame, 
+            text="Enviar", 
+            command=self.enviar_mensaje, 
+            width=8,
+            bg=self.button_bg,
+            fg=self.fg_color,
+            font=('Arial', self.font_size),
+            state=tk.DISABLED,  # Deshabilitado hasta conectar
+            relief="solid",
+            bd=1
+        )
+        self.btn_enviar.pack(side=tk.LEFT, padx=2)
         
         # === SECCIÓN DE ARCHIVOS SIMPLIFICADA ===
-        file_frame = tk.Frame(main_frame, bg='white')
+        file_frame = tk.Frame(main_frame, bg=self.bg_color, highlightbackground=self.border_color, highlightthickness=1)
         file_frame.pack(fill=tk.X, pady=2)
         
         # Botón para seleccionar archivo (sin emojis ni colores)
@@ -134,7 +200,12 @@ class ChatMinimalTkinter:
             file_frame, 
             text="Seleccionar Archivo",
             command=self.seleccionar_archivo,
-            width=15
+            width=15,
+            bg=self.button_bg,
+            fg=self.fg_color,
+            font=('Arial', self.font_size),
+            relief="solid",
+            bd=1
         )
         self.btn_seleccionar.pack(side=tk.LEFT, padx=2)
         
@@ -142,8 +213,9 @@ class ChatMinimalTkinter:
         self.lbl_archivo = tk.Label(
             file_frame, 
             text="Ningun archivo", 
-            bg='white', 
-            fg='black'
+            bg=self.bg_color, 
+            fg=self.fg_color,
+            font=('Arial', self.font_size)
         )
         self.lbl_archivo.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
         
@@ -153,23 +225,33 @@ class ChatMinimalTkinter:
             text="Enviar Archivo",
             command=self.enviar_archivo,
             state=tk.DISABLED,
-            width=15
+            width=15,
+            bg=self.button_bg,
+            fg=self.fg_color,
+            font=('Arial', self.font_size),
+            relief="solid",
+            bd=1
         )
         self.btn_enviar_archivo.pack(side=tk.RIGHT, padx=2)
         
         # Controles simples
-        control_frame = tk.Frame(main_frame, bg='white')
+        control_frame = tk.Frame(main_frame, bg=self.bg_color, highlightbackground=self.border_color, highlightthickness=1)
         control_frame.pack(fill=tk.X, pady=2)
         
-        # Destino con Combobox simple
-        tk.Label(control_frame, text="Para:", bg='white').pack(side=tk.LEFT)
+        tk.Label(control_frame, text="Para:", bg=self.bg_color, fg=self.fg_color, font=('Arial', self.font_size)).pack(side=tk.LEFT)
         
         self.destino_var = tk.StringVar(value="FF:FF:FF:FF:FF:FF")
-        self.destino_combo = tk.Listbox(control_frame, height=4, width=25, exportselection=0)
+        self.destino_combo = ttk.Combobox(
+            control_frame, 
+            textvariable=self.destino_var,
+            values=list(self.contactos.keys()),
+            state="readonly",
+            width=25
+        )
         self.destino_combo.pack(side=tk.LEFT, padx=2)
+        self.destino_combo.bind('<<ComboboxSelected>>', self.actualizar_destino)
+
         
-        # Actualizar lista de destinos
-        self.actualizar_destinos()
         
         # Botón para agregar contacto
         self.btn_agregar_contacto = tk.Button(
@@ -177,39 +259,52 @@ class ChatMinimalTkinter:
             text="+", 
             command=self.agregar_contacto_simple, 
             width=2,
-            state=tk.DISABLED  # Deshabilitado hasta conectar
+            state=tk.DISABLED, # Deshabilitado hasta conectar
+            bg=self.button_bg,
+            fg=self.fg_color,
+            font=('Arial', self.font_size),
+            relief="solid",
+            bd=1
         )
         self.btn_agregar_contacto.pack(side=tk.LEFT, padx=2)
 
-        # Entrada de mensaje
-        msg_frame = tk.Frame(main_frame, bg='white')
-        msg_frame.pack(fill=tk.X, pady=2)
-        
-        tk.Label(msg_frame, text="Mensaje:", bg='white').pack(side=tk.LEFT)
-        self.mensaje_var = tk.StringVar()
-        self.mensaje_entry = tk.Entry(msg_frame, textvariable=self.mensaje_var, width=40)
-        self.mensaje_entry.pack(side=tk.LEFT, padx=2)
-        self.mensaje_entry.bind('<Return>', self.enviar_mensaje)
-        
-        # Botones básicos
-        btn_frame = tk.Frame(main_frame, bg='white')
+        btn_frame = tk.Frame(main_frame, bg=self.bg_color, highlightbackground=self.border_color, highlightthickness=1)
         btn_frame.pack(fill=tk.X, pady=5)
-        
-        self.btn_enviar = tk.Button(
-            btn_frame, 
-            text="Enviar", 
-            command=self.enviar_mensaje, 
-            width=8,
-            state=tk.DISABLED  # Deshabilitado hasta conectar
-        )
-        self.btn_enviar.pack(side=tk.LEFT, padx=2)
 
-        tk.Button(btn_frame, text="Limpiar", command=self.limpiar_mensajes, width=8).pack(side=tk.LEFT, padx=2)
-        tk.Button(btn_frame, text="Salir", command=self.salir, width=8).pack(side=tk.LEFT, padx=2)
+        tk.Button(btn_frame, text="Limpiar", command=self.limpiar_mensajes, width=8, bg=self.button_bg, fg=self.fg_color, font=('Arial', self.font_size), relief="solid", bd=1).pack(side=tk.LEFT, padx=2)
+        tk.Button(btn_frame, text="Salir", command=self.salir, width=8, bg=self.button_bg, fg=self.fg_color, font=('Arial', self.font_size), relief="solid", bd=1).pack(side=tk.LEFT, padx=2)
         
         # Bind selección de destino
         self.destino_combo.bind('<<ListboxSelect>>', self.seleccionar_destino)
     
+    def insertar_nueva_linea(self, event=None):
+        """Inserta una nueva línea cuando se presiona Shift+Enter"""
+        self.mensaje_entry.insert(tk.INSERT, "\n")
+        return "break"  # Previene el comportamiento por defecto de Enter
+    
+    def actualizar_destino(self, event=None):
+        try:
+            # Obtener el valor actual del combobox
+            seleccion = self.destino_var.get()
+            print(f"🔍 actualizar_destino: Selección del combobox: '{seleccion}'")
+            
+            # Si la selección está en formato "Nombre (MAC)", extraer solo la MAC
+            if "(" in seleccion and ")" in seleccion:
+                mac = seleccion.split("(")[1].split(")")[0].strip()
+                print(f"🔍 actualizar_destino: MAC extraída: '{mac}'")
+            else:
+                mac = seleccion
+            
+            # Validar y normalizar la MAC
+            if self.validar_mac(mac):
+                self.destino_actual = mac.upper().replace('-', ':')
+                print(f"✅ Destino actualizado: {self.destino_actual}")
+            else:
+                print(f"❌ MAC destino inválida: {mac}")
+                
+        except Exception as e:
+            print(f"❌ Error en actualizar_destino: {e}")
+
     def conectar_interfaz(self):
         """Conecta usando la interfaz seleccionada"""
         interfaz = self.interfaz_var.get()
@@ -283,6 +378,88 @@ class ChatMinimalTkinter:
             
         except Exception as e:
             self.root.after(0, self._callback_envio_archivo, False, f"Error: {str(e)}")
+
+    def procesar_archivo_recibido(self, frame):
+        """Procesa y guarda un archivo recibido"""
+        try:
+            print(f"📥 Procesando archivo recibido:")
+            print(f"   - Datos: {frame.datos[:100] if frame.datos else 'VACIO'}")
+            print(f"   - Nombre archivo: {getattr(frame, 'nombre_archivo', 'No disponible')}")
+            
+            # Convertir datos a string si son bytes
+            if isinstance(frame.datos, bytes):
+                try:
+                    mensaje = frame.datos.decode('utf-8', errors='ignore')
+                except:
+                    mensaje = frame.datos.decode('latin-1', errors='ignore')
+            else:
+                mensaje = str(frame.datos)
+            
+            print(f"   - Mensaje decodificado: {mensaje[:100]}...")
+            
+            # Procesar según el tipo de mensaje de archivo
+            if mensaje.startswith('FILE_METADATA:'):
+                self.file_transfer.receive_file(mensaje, frame.mac_origen)
+            elif mensaje.startswith('FILE_CHUNK:'):
+                self.file_transfer.receive_file(mensaje, frame.mac_origen)
+            elif mensaje.startswith('FILE_END:'):
+                self.file_transfer.receive_file(mensaje, frame.mac_origen)
+            else:
+                # Archivo no fragmentado - guardar directamente
+                self._guardar_archivo_no_fragmentado(frame)
+                
+        except Exception as e:
+            error_msg = f"❌ Error procesando archivo: {str(e)}"
+            self.mostrar_mensaje("Error", error_msg)
+            print(error_msg)
+            import traceback
+            traceback.print_exc()
+            
+
+    def _guardar_archivo_no_fragmentado(self, frame):
+        """Guarda un archivo que no está fragmentado"""
+        try:
+            nombre_archivo = getattr(frame, 'nombre_archivo', None)
+            datos_archivo = frame.datos
+            
+            if not nombre_archivo:
+                timestamp = int(time.time())
+                nombre_archivo = f"archivo_recibido_{timestamp}.bin"
+            
+            if not datos_archivo:
+                print("❌ No hay datos en el frame para guardar")
+                return
+            
+            # Crear directorio de descargas si no existe
+            download_dir = "descargas"
+            if not os.path.exists(download_dir):
+                os.makedirs(download_dir)
+            
+            # Generar nombre único
+            nombre_base = nombre_archivo
+            nombre_completo = os.path.join(download_dir, nombre_base)
+            
+            contador = 1
+            while os.path.exists(nombre_completo):
+                nombre, extension = os.path.splitext(nombre_base)
+                nombre_completo = os.path.join(download_dir, f"{nombre}_{contador}{extension}")
+                contador += 1
+            
+            # Guardar archivo
+            with open(nombre_completo, 'wb') as f:
+                f.write(datos_archivo)
+            
+            # Mostrar mensaje de éxito
+            tamaño = len(datos_archivo)
+            mensaje = f"📁 Archivo recibido: {nombre_base} ({tamaño} bytes)"
+            self.mostrar_mensaje("Sistema", mensaje)
+            
+            print(f"✅ Archivo guardado: {nombre_completo}")
+            
+        except Exception as e:
+            error_msg = f"❌ Error guardando archivo no fragmentado: {str(e)}"
+            self.mostrar_mensaje("Error", error_msg)
+            print(error_msg)
     
     def _callback_envio_archivo(self, exito, mensaje):
         """Callback cuando termina el envío del archivo"""
@@ -302,15 +479,26 @@ class ChatMinimalTkinter:
     
     def actualizar_destinos(self):
         """Actualiza la lista de destinos disponibles"""
-        self.destino_combo.delete(0, tk.END)
-        
-        for mac, nombre in self.contactos.items():
-            self.destino_combo.insert(tk.END, f"{nombre} ({mac})")
-        
-        # Seleccionar el primero por defecto
-        if self.destino_combo.size() > 0:
-            self.destino_combo.selection_set(0)
-            self.seleccionar_destino()
+        try:
+            # Crear lista en formato "Nombre (MAC)"
+            valores_combobox = [f"{nombre} ({mac})" for mac, nombre in self.contactos.items()]
+            
+            # Actualizar los valores del combobox
+            self.destino_combo['values'] = valores_combobox
+            
+            print(f"🔧 Destinos disponibles: {valores_combobox}")
+            
+            # Si no hay selección actual, seleccionar broadcast por defecto
+            if valores_combobox and not self.destino_var.get():
+                # Buscar el valor de broadcast en la lista
+                broadcast_item = next((item for item in valores_combobox if "FF:FF:FF:FF:FF:FF" in item), None)
+                if broadcast_item:
+                    self.destino_var.set(broadcast_item)
+                    self.actualizar_destino()
+                    print(f"🔧 Destino establecido por defecto: {self.destino_actual}")
+                
+        except Exception as e:
+            print(f"❌ Error actualizando destinos: {e}")
     
     def seleccionar_destino(self, event=None):
         """Selecciona destino de la lista"""
@@ -337,38 +525,69 @@ class ChatMinimalTkinter:
     
     def iniciar_comunicador(self):
         """Inicia el comunicador"""
-        def _iniciar():
+        self.stop_event = threading.Event()
+        self.com = Envio_recibo_frames(interfaz=self.interfaz_seleccionada)
+        mac_propia = self.com.mac_ori
+                
+        self.habilitar_controles_chat()
+        self.actualizar_estado(f"Conectado - {self.interfaz_seleccionada} - MAC: {mac_propia}")
+        self.mostrar_mensaje("Sistema", f"Conectado - Interfaz: {self.interfaz_seleccionada} - Mi MAC: {mac_propia}")
+        
+        self.actualizar_destino()
+        self.receive_thread = threading.Thread(
+            target=self.com.receive_thread,
+            args=(self.stop_event,),  
+            daemon=True
+            )
+        self.receive_thread.start()
+        self.poll_incoming()
+
+    def _hilo_recepcion(self):
+        """Hilo personalizado para recibir mensajes"""
+        print(f"👂 Iniciando hilo de recepción en {self.interfaz_seleccionada}...")
+        
+        while self.ejecutando_recepcion and self.com:
             try:
-                if os.geteuid() != 0:
-                    self.root.after(0, lambda: messagebox.showerror("Error", "Ejecuta con sudo!"))
-                    return
+                # Recibir frame
+                frame_bytes = self.com.receive_frame()
                 
-                self.com = Envio_recibo_frames(interfaz=self.interfaz_seleccionada)
-                mac_propia = self.com.mac_ori
+                if frame_bytes:
+                    # Decodificar frame
+                    frame_decodificado = self.com.decodificar_frame(frame_bytes)
+                    
+                    if frame_decodificado:
+                        mac_origen = frame_decodificado.mac_origen
+                        mensaje = frame_decodificado.datos
+                        
+                        # Procesar en el hilo principal
+                        self.root.after(0, lambda: self.manejar_mensaje_recibido(mac_origen, mensaje))
                 
-                self.root.after(0, self.habilitar_controles_chat)
-                self.root.after(0, lambda: self.actualizar_estado(f"Conectado - {self.interfaz_seleccionada} - MAC: {mac_propia}"))
-                self.root.after(0, lambda: self.mostrar_mensaje("Sistema", f"Conectado - Interfaz: {self.interfaz_seleccionada} - Mi MAC: {mac_propia}"))
-                
-                # Modificar el escuchador para manejar archivos
-                self.com.escuchar(callback=self.manejar_mensaje_recibido)
+                # Pequeña pausa para no saturar la CPU
+                time.sleep(0.01)
                 
             except Exception as e:
-                self.root.after(0, lambda: self.mostrar_mensaje("Error", str(e)))
-                self.root.after(0, lambda: self.actualizar_estado(f"Error: {str(e)}"))
-                # Rehabilitar el botón de conectar en caso de error
-                self.root.after(0, lambda: self.btn_conectar.config(state=tk.NORMAL))
-                self.root.after(0, lambda: self.interfaz_combo.config(state="readonly"))
-        
-        threading.Thread(target=_iniciar, daemon=True).start()
+                if self.ejecutando_recepcion:
+                    print(f"❌ Error en hilo de recepción: {e}")
+                    time.sleep(0.1)  # Pausa más larga en caso de error
     
     def manejar_mensaje_recibido(self, mac_origen, mensaje):
-        """Maneja mensajes recibidos (texto y archivos)"""
+        # Agregar a contactos si es nuevo
+        if mac_origen not in self.contactos:
+            self.contactos[mac_origen] = f"Dispositivo {mac_origen[-6:]}"
+            self.guardar_contactos()
+            self.root.after(0, self.actualizar_lista_destinos)
+        
+        # Mostrar mensaje
         if isinstance(mensaje, bytes):
             try:
-                mensaje = mensaje.decode('utf-8')
+                # Intentar decodificar como texto
+                mensaje_texto = mensaje.decode('utf-8')
+                self.root.after(0, lambda: self.mostrar_mensaje(mac_origen, mensaje_texto))
             except:
-                mensaje = f"[Datos: {len(mensaje)} bytes]"
+                # Es un archivo u otros datos binarios
+                self.root.after(0, lambda: self.mostrar_mensaje(mac_origen, f"[Datos binarios: {len(mensaje)} bytes]"))
+        else:
+            self.root.after(0, lambda: self.mostrar_mensaje(mac_origen, mensaje))
         
         # Procesar mensajes de archivo
         if mensaje.startswith(("FILE_METADATA:", "FILE_CHUNK:", "FILE_END:")):
@@ -388,36 +607,120 @@ class ChatMinimalTkinter:
             messagebox.showerror("Error", "Comunicador no inicializado")
             return
         
-        mensaje = self.mensaje_var.get().strip()
+        self.actualizar_destino()
+        mensaje = self.mensaje_entry.get('1.0', tk.END).strip()
         if not mensaje:
             return
-        
+        list = None
+        self.mostrar_mensaje("Yo",  f"→ {mensaje}")
+        list = self.com.crear_frame(self.destino_actual, Tipo_Mensaje.texto, mensaje)
         self.mensaje_var.set("")
-        threading.Thread(target=lambda: self._enviar(mensaje), daemon=True).start()
+
+        if list:
+            self.com.enviar_frame(list)
+
+        self.mensaje_entry.delete('1.0', tk.END)       
+        # # Enviar en hilo separado
+        # threading.Thread(
+        #     target=self._enviar_mensaje_thread,
+        #     args=(mensaje, self.destino_actual),
+        #     daemon=True
+        # ).start()
     
-    def _enviar(self, mensaje):
+    def _enviar_mensaje_thread(self, mensaje, destino):
         """Envía mensaje en hilo separado"""
         try:
-            resultado = self.com.enviar_mensaje(self.destino_actual, mensaje)
-            if resultado > 0:
-                self.root.after(0, lambda: self.mostrar_mensaje("Yo", f"→ {mensaje}"))
+            self.contador_mensajes += 1
+            frame = self.com.crear_frame(
+                destino,
+    
+                Tipo_Mensaje.texto.value,
+                mensaje
+            )
+            
+            bytes_enviados = self.com.enviar_frame(frame)
+            
+            if bytes_enviados > 0:
+                self.root.after(0, lambda: self.mostrar_mensaje("Yo", mensaje))
+            else:
+                self.root.after(0, lambda: self.mostrar_mensaje("Error", "No se pudo enviar el mensaje"))
+                
         except Exception as e:
-            self.root.after(0, lambda: self.mostrar_mensaje("Error", f"Envío fallido: {e}"))
+            self.root.after(0, lambda: self.mostrar_mensaje("Error", f"Error al enviar: {str(e)}"))
+
+    def poll_incoming(self):
+        # Revisar si hay frames en la cola
+        try:
+            # Revisar si hay frames en la cola
+            while not self.com.cola_mensajes.empty():
+                decoded_frame = self.com.cola_mensajes.get()
+                print(f"🔔 Frame obtenido de cola: tipo {decoded_frame.tipo_mensaje}")
+
+                if decoded_frame.tipo_mensaje == Tipo_Mensaje.texto:
+                    print("📝 Mensaje de texto recibido")
+                    # Procesar mensaje de texto directamente
+                    mensaje = decoded_frame.datos
+                    
+                    # Convertir a string si es bytes
+                    if isinstance(mensaje, bytes):
+                        try:
+                            mensaje = mensaje.decode('utf-8')
+                        except:
+                            mensaje = str(mensaje)
+                    
+                    # Mostrar el mensaje
+                    self.mostrar_mensaje(decoded_frame.mac_origen, mensaje)
+                    
+                    # Actualizar contactos si es nuevo
+                    if decoded_frame.mac_origen not in self.contactos:
+                        self.contactos[decoded_frame.mac_origen] = f"Dispositivo {decoded_frame.mac_origen[-6:]}"
+                        self.guardar_contactos()
+                        self.actualizar_destinos()
+                
+                elif decoded_frame.tipo_mensaje == Tipo_Mensaje.archivo:
+                    print("📁 Frame de archivo recibido")
+                    # Procesar archivo recibido
+                    self.procesar_archivo_recibido(decoded_frame)
+                else:
+                    print(f"❓ Tipo de mensaje desconocido: {decoded_frame.tipo_mensaje}")
+
+        except Exception as e:
+            print(f"❌ Error en poll_incoming: {e}")
+        
+        # Programar que se vuelva a ejecutar más frecuentemente
+        self.root.after(10, self.poll_incoming)
+
+        # def _enviar(self, mensaje):
     
     def mostrar_mensaje(self, remitente, mensaje):
         """Muestra mensaje en el área de texto"""
-        self.text_area.config(state=tk.NORMAL)
-        
-        # Usar nombre amigable si está en contactos
-        if remitente in self.contactos:
-            nombre = self.contactos[remitente]
-        else:
-            nombre = remitente
-        
-        timestamp = time.strftime("%H:%M:%S")
-        self.text_area.insert(tk.END, f"[{timestamp}] {nombre}: {mensaje}\n")
-        self.text_area.see(tk.END)
-        self.text_area.config(state=tk.DISABLED)
+        try:
+            self.text_area.config(state=tk.NORMAL)
+            
+            # Usar nombre amigable si está en contactos
+            if remitente in self.contactos:
+                nombre = self.contactos[remitente]
+            else:
+                nombre = remitente
+            
+            timestamp = time.strftime("%H:%M:%S")
+            
+            # Formato simple sin emojis para evitar errores gráficos
+            if remitente == "Yo":
+                formato = f"[{timestamp}] Yo: {mensaje}\n"
+            elif remitente == "Sistema":
+                formato = f"[{timestamp}] Sistema: {mensaje}\n"
+            elif remitente == "Error":
+                formato = f"[{timestamp}] Error: {mensaje}\n"
+            else:
+                formato = f"[{timestamp}] {nombre}: {mensaje}\n"
+            
+            self.text_area.insert(tk.END, formato)
+            self.text_area.see(tk.END)
+            self.text_area.config(state=tk.DISABLED)
+            
+        except Exception as e:
+            print(f"❌ Error en mostrar_mensaje: {e}")
     
     def limpiar_mensajes(self):
         """Limpia el área de mensajes"""
@@ -449,6 +752,7 @@ class ChatMinimalTkinter:
         if messagebox.askokcancel("Salir", "¿Estás seguro?"):
             if self.com:
                 self.com.stop()
+                self.stop_event.set()
             self.root.destroy()
 
 def main():

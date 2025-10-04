@@ -5,121 +5,114 @@ from threading import Lock
 from typing import Dict, List, Tuple, Optional
 
 class FragmentManager:
-    """
-    Gestiona la fragmentación y reensamblaje de mensajes largos
-    """
-    
-    def __init__(self, tiempo_espera_fragmentos: int = 30):
-        """
-        Args:
-            tiempo_espera_fragmentos: Segundos a esperar por fragmentos faltantes antes de descartar
-        """
-        self.tiempo_espera = tiempo_espera_fragmentos
-        self.mensajes_ensamblaje: Dict[int, Dict] = {}  # id_mensaje -> info de ensamblaje
-        self.lock = Lock()
-        self.ultimo_id_mensaje = int(time.time() * 1000) % (2**32)
+    def __init__(self):
+        self.fragmentos_pendientes: Dict[str, Dict] = {}
+        self.timeout = 30  # segundos
+        self.lock = Lock()  # Para thread safety
         
-    def generar_id_mensaje(self) -> int:
-        """Genera un ID único para un mensaje"""
+    def agregar_fragmento(self, id_mensaje: int, num_fragmento: int, total_fragmentos: int, datos: bytes, mac_origen: str) -> Optional[bytes]:
+        """Agrega un fragmento y devuelve el mensaje completo si está listo"""
         with self.lock:
-            self.ultimo_id_mensaje = (self.ultimo_id_mensaje + 1) % (2**32)
-            return self.ultimo_id_mensaje
-    
-    def fragmentar_mensaje(self, datos: bytes, tamaño_maximo_fragmento: int = 1400) -> List[Tuple[bytes, int, int, int]]:
-        """
-        Fragmenta un mensaje en partes más pequeñas
-        
-        Args:
-            datos: Datos a fragmentar
-            tamaño_maximo_fragmento: Tamaño máximo por fragmento (1492 = 1500 - 8 headers)
+            clave = f"{mac_origen}_{id_mensaje}"
             
-        Returns:
-            Lista de tuplas (datos_fragmento, id_mensaje, num_fragmento, total_fragmentos)
-        """
-        if len(datos) <= tamaño_maximo_fragmento:
-            # No necesita fragmentación
-            return [(datos, self.generar_id_mensaje(), 0, 1)]
-        
-        id_mensaje = self.generar_id_mensaje()
-        total_fragmentos = (len(datos) + tamaño_maximo_fragmento - 1) // tamaño_maximo_fragmento
-        
-        if total_fragmentos > 65535:
-            raise ValueError(f"Mensaje demasiado grande: {len(datos)} bytes requiere {total_fragmentos} fragmentos")
-        
-        fragmentos = []
-        for i in range(total_fragmentos):
-            inicio = i * tamaño_maximo_fragmento
-            fin = min(inicio + tamaño_maximo_fragmento, len(datos))
-            fragmento_datos = datos[inicio:fin]
+            print(f"🔧 FragmentManager: Agregando fragmento {num_fragmento} (total: {total_fragmentos})")
+            print(f"🔧 FragmentManager: Clave: {clave}")
+            print(f"🔧 FragmentManager: Tamaño datos: {len(datos)} bytes")
             
-            fragmentos.append((fragmento_datos, id_mensaje, i, total_fragmentos))
-        
-        return fragmentos
-    
-    def agregar_fragmento(self, id_mensaje: int, num_fragmento: int, total_fragmentos: int, 
-                         datos: bytes, mac_origen: str) -> Optional[bytes]:
-        """
-        Agrega un fragmento recibido y verifica si el mensaje está completo
-        
-        Returns:
-            Mensaje completo si todos los fragmentos fueron recibidos, None si faltan
-        """
-        with self.lock:
-            # Limpiar mensajes expirados primero
-            self._limpiar_expirados()
-            
-            clave = id_mensaje
-            if clave not in self.mensajes_ensamblaje:
-                # Nuevo mensaje
-                self.mensajes_ensamblaje[clave] = {
-                    'fragmentos_recibidos': [None] * total_fragmentos,
+            if clave not in self.fragmentos_pendientes:
+                # NUEVO: Inicializar con diccionario para manejar fragmentos fuera de orden
+                self.fragmentos_pendientes[clave] = {
                     'total_fragmentos': total_fragmentos,
+                    'fragmentos_recibidos': {},  # Usar diccionario en lugar de lista
                     'timestamp': time.time(),
                     'mac_origen': mac_origen,
-                    'fragmentos_recibidos_count': 0
+                    'id_mensaje': id_mensaje,
+                    'bytes_totales': 0,
+                    'fragmentos_esperados': set(range(total_fragmentos))  # NUEVO: saber qué fragmentos esperamos
                 }
+                print(f"🔧 FragmentManager: Nuevo mensaje {clave} con {total_fragmentos} fragmentos")
             
-            info = self.mensajes_ensamblaje[clave]
+            mensaje = self.fragmentos_pendientes[clave]
             
-            # Verificar que el número de fragmento sea válido
-            if num_fragmento >= info['total_fragmentos']:
-                print(f"Error: Fragmento {num_fragmento} fuera de rango (total: {info['total_fragmentos']})")
-                return None
+            # NUEVO: Actualizar total_fragmentos si recibimos uno mayor
+            if total_fragmentos > mensaje['total_fragmentos']:
+                print(f"🔧 FragmentManager: Actualizando total de {mensaje['total_fragmentos']} a {total_fragmentos}")
+                mensaje['total_fragmentos'] = total_fragmentos
+                # Actualizar fragmentos esperados
+                mensaje['fragmentos_esperados'] = set(range(total_fragmentos))
             
-            # Si ya teníamos este fragmento, ignorar
-            if info['fragmentos_recibidos'][num_fragmento] is None:
-                info['fragmentos_recibidos'][num_fragmento] = datos
-                info['fragmentos_recibidos_count'] += 1
+            # Almacenar el fragmento en el diccionario
+            if num_fragmento not in mensaje['fragmentos_recibidos']:
+                mensaje['fragmentos_recibidos'][num_fragmento] = datos
+                mensaje['bytes_totales'] += len(datos)
+                mensaje['timestamp'] = time.time()
+                print(f"🔧 FragmentManager: Fragmento {num_fragmento} almacenado")
+            else:
+                print(f"⚠️  FragmentManager: Fragmento {num_fragmento} ya estaba almacenado")
             
-            # Verificar si tenemos todos los fragmentos
-            if info['fragmentos_recibidos_count'] == info['total_fragmentos']:
-                # Reensamblar mensaje
-                mensaje_completo = b''.join(info['fragmentos_recibidos'])
-                del self.mensajes_ensamblaje[clave]
-                return mensaje_completo
+            # VERIFICACIÓN CORREGIDA: Comprobar si tenemos todos los fragmentos esperados
+            fragmentos_recibidos = set(mensaje['fragmentos_recibidos'].keys())
+            fragmentos_faltantes = mensaje['fragmentos_esperados'] - fragmentos_recibidos
             
+            print(f"🔧 FragmentManager: Fragmentos recibidos: {len(fragmentos_recibidos)}/{mensaje['total_fragmentos']}")
+            print(f"🔧 FragmentManager: Fragmentos faltantes: {sorted(fragmentos_faltantes)}")
+            
+            if not fragmentos_faltantes:
+                # ¡Todos los fragmentos recibidos!
+                print(f"🎉 FragmentManager: TODOS los fragmentos recibidos para {clave}")
+                
+                try:
+                    # Reensamblar en orden
+                    fragmentos_ordenados = []
+                    for i in range(mensaje['total_fragmentos']):
+                        fragmentos_ordenados.append(mensaje['fragmentos_recibidos'][i])
+                    
+                    mensaje_completo = b''.join(fragmentos_ordenados)
+                    print(f"🎉 FragmentManager: Mensaje reensamblado - {len(mensaje_completo)} bytes")
+                    
+                    # Limpiar
+                    del self.fragmentos_pendientes[clave]
+                    return mensaje_completo
+                    
+                except Exception as e:
+                    print(f"❌ FragmentManager: Error reensamblando mensaje: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    del self.fragmentos_pendientes[clave]
+                    return None
+            else:
+                # Mostrar progreso detallado
+                progreso = len(fragmentos_recibidos) / mensaje['total_fragmentos'] * 100
+                print(f"📊 FragmentManager: Progreso: {progreso:.1f}% ({len(fragmentos_recibidos)}/{mensaje['total_fragmentos']})")
+            
+            # Limpiar mensajes antiguos
+            self._limpiar_antiguos()
+        
             return None
     
-    def _limpiar_expirados(self):
-        """Elimina mensajes que han estado esperando fragmentos por demasiado tiempo"""
+    def _limpiar_antiguos(self):
+        """Elimina mensajes fragmentados antiguos"""
         ahora = time.time()
-        expirados = []
+        claves_a_eliminar = []
         
-        for id_msg, info in self.mensajes_ensamblaje.items():
-            if ahora - info['timestamp'] > self.tiempo_espera:
-                expirados.append(id_msg)
-                print(f"Descartando mensaje {id_msg} por timeout ({info['fragmentos_recibidos_count']}/{info['total_fragmentos']} fragmentos)")
+        for clave, mensaje in self.fragmentos_pendientes.items():
+            if ahora - mensaje['timestamp'] > self.timeout:
+                claves_a_eliminar.append(clave)
+                fragmentos_recibidos = len(mensaje['fragmentos_recibidos'])
+                print(f"⏰ FragmentManager: Timeout para {clave} - {fragmentos_recibidos}/{mensaje['total_fragmentos']} fragmentos")
         
-        for id_msg in expirados:
-            del self.mensajes_ensamblaje[id_msg]
+        for clave in claves_a_eliminar:
+            del self.fragmentos_pendientes[clave]
     
-    def obtener_estado_ensamblaje(self) -> Dict[str, int]:
+    def obtener_estado_ensamblaje(self):
         """Retorna estadísticas de ensamblaje"""
         with self.lock:
+            total_mensajes = len(self.fragmentos_pendientes)
+            total_fragmentos_esperados = sum(msg['total_fragmentos'] for msg in self.fragmentos_pendientes.values())
+            fragmentos_recibidos = sum(len(msg['fragmentos_recibidos']) for msg in self.fragmentos_pendientes.values())
+            
             return {
-                'mensajes_pendientes': len(self.mensajes_ensamblaje),
-                'fragmentos_faltantes': sum(
-                    info['total_fragmentos'] - info['fragmentos_recibidos_count'] 
-                    for info in self.mensajes_ensamblaje.values()
-                )
+                'mensajes_pendientes': total_mensajes,
+                'fragmentos_totales': total_fragmentos_esperados,
+                'fragmentos_recibidos': fragmentos_recibidos
             }
