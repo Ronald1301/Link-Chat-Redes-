@@ -7,41 +7,34 @@ from typing import Dict, List, Tuple, Optional
 class FragmentManager:
     def __init__(self):
         self.fragmentos_pendientes: Dict[str, Dict] = {}
-        self.timeout = 30  # segundos
-        self.lock = Lock()  # Para thread safety
+        self.timeout = 30 
+        self.lock = Lock()  
         
-    def agregar_fragmento(self, id_mensaje: int, num_fragmento: int, total_fragmentos: int, datos: bytes, mac_origen: str) -> Optional[bytes]:
-        """Agrega un fragmento y devuelve el mensaje completo si está listo"""
+    def agregar_fragmento(self, id_mensaje: int, num_fragmento: int, total_fragmentos: int, 
+                          datos: bytes, mac_origen: str) -> Optional[bytes]:
+        #Agrega un fragmento y devuelve el mensaje completo si está listo
         with self.lock:
             clave = f"{mac_origen}_{id_mensaje}"
-            
-            print(f"🔧 FragmentManager: Agregando fragmento {num_fragmento} (total: {total_fragmentos})")
-            print(f"🔧 FragmentManager: Clave: {clave}")
-            print(f"🔧 FragmentManager: Tamaño datos: {len(datos)} bytes")
-            
+        
             if clave not in self.fragmentos_pendientes:
-                # NUEVO: Inicializar con diccionario para manejar fragmentos fuera de orden
                 self.fragmentos_pendientes[clave] = {
                     'total_fragmentos': total_fragmentos,
-                    'fragmentos_recibidos': {},  # Usar diccionario en lugar de lista
+                    'fragmentos_recibidos': {},
                     'timestamp': time.time(),
                     'mac_origen': mac_origen,
                     'id_mensaje': id_mensaje,
                     'bytes_totales': 0,
-                    'fragmentos_esperados': set(range(total_fragmentos))  # NUEVO: saber qué fragmentos esperamos
+                    'fragmentos_esperados': set(range(total_fragmentos)) 
                 }
                 print(f"🔧 FragmentManager: Nuevo mensaje {clave} con {total_fragmentos} fragmentos")
             
             mensaje = self.fragmentos_pendientes[clave]
             
-            # NUEVO: Actualizar total_fragmentos si recibimos uno mayor
             if total_fragmentos > mensaje['total_fragmentos']:
                 print(f"🔧 FragmentManager: Actualizando total de {mensaje['total_fragmentos']} a {total_fragmentos}")
                 mensaje['total_fragmentos'] = total_fragmentos
-                # Actualizar fragmentos esperados
                 mensaje['fragmentos_esperados'] = set(range(total_fragmentos))
             
-            # Almacenar el fragmento en el diccionario
             if num_fragmento not in mensaje['fragmentos_recibidos']:
                 mensaje['fragmentos_recibidos'][num_fragmento] = datos
                 mensaje['bytes_totales'] += len(datos)
@@ -50,7 +43,6 @@ class FragmentManager:
             else:
                 print(f"⚠️  FragmentManager: Fragmento {num_fragmento} ya estaba almacenado")
             
-            # VERIFICACIÓN CORREGIDA: Comprobar si tenemos todos los fragmentos esperados
             fragmentos_recibidos = set(mensaje['fragmentos_recibidos'].keys())
             fragmentos_faltantes = mensaje['fragmentos_esperados'] - fragmentos_recibidos
             
@@ -58,7 +50,6 @@ class FragmentManager:
             print(f"🔧 FragmentManager: Fragmentos faltantes: {sorted(fragmentos_faltantes)}")
             
             if not fragmentos_faltantes:
-                # ¡Todos los fragmentos recibidos!
                 print(f"🎉 FragmentManager: TODOS los fragmentos recibidos para {clave}")
                 
                 try:
@@ -90,8 +81,7 @@ class FragmentManager:
         
             return None
     
-    def _limpiar_antiguos(self):
-        """Elimina mensajes fragmentados antiguos"""
+    def _limpiar_antiguos(self): #Elimina mensajes fragmentados antiguos
         ahora = time.time()
         claves_a_eliminar = []
         
@@ -104,8 +94,7 @@ class FragmentManager:
         for clave in claves_a_eliminar:
             del self.fragmentos_pendientes[clave]
     
-    def obtener_estado_ensamblaje(self):
-        """Retorna estadísticas de ensamblaje"""
+    def obtener_estado_ensamblaje(self): #Retorna estadísticas de ensamblaje
         with self.lock:
             total_mensajes = len(self.fragmentos_pendientes)
             total_fragmentos_esperados = sum(msg['total_fragmentos'] for msg in self.fragmentos_pendientes.values())

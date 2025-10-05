@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import tkinter as tk
 from tkinter import scrolledtext, messagebox, simpledialog, filedialog, ttk
 import threading
@@ -11,10 +10,10 @@ from env_recb import Envio_recibo_frames
 from files import FileTransfer
 from mac import Mac 
 
-if not os.path.exists("descargas"):
+if not os.path.exists("descargas"): #carpeta para archivos
     os.makedirs("descargas")
 
-# Configuración para VirtualBox - evitar problemas gráficos
+# Configuración para VirtualBox 
 os.environ['TK_SILENCE_DEPRECATION'] = '1'
 
 def configurar_tkinter():
@@ -23,12 +22,12 @@ def configurar_tkinter():
     
 configurar_tkinter()
 
-class ChatMinimalTkinter:
+class Interfaz_Tkinter:
     def __init__(self, root):
         self.root = root
         self.root.title("Link Chat")
-        self.root.geometry("1000x1000")  # Un poco más alto para los botones de archivo
-        
+        self.root.geometry("1000x1000")  
+
         # Configuración minimalista
         self.root.resizable(True, True)
         self.root.configure(bg='#2F2F2F')
@@ -534,12 +533,12 @@ class ChatMinimalTkinter:
         self.mostrar_mensaje("Sistema", f"Conectado - Interfaz: {self.interfaz_seleccionada} - Mi MAC: {mac_propia}")
         
         self.actualizar_destino()
-        self.receive_thread = threading.Thread(
-            target=self.com.receive_thread,
+        self.recibir_thread = threading.Thread(
+            target=self.com.recibir_thread,
             args=(self.stop_event,),  
             daemon=True
             )
-        self.receive_thread.start()
+        self.recibir_thread.start()
         self.poll_incoming()
 
     def _hilo_recepcion(self):
@@ -549,7 +548,7 @@ class ChatMinimalTkinter:
         while self.ejecutando_recepcion and self.com:
             try:
                 # Recibir frame
-                frame_bytes = self.com.receive_frame()
+                frame_bytes = self.com.recibir_frame()
                 
                 if frame_bytes:
                     # Decodificar frame
@@ -774,7 +773,7 @@ def main():
     root.option_add('*Label*font', 'Arial 9')
     root.option_add('*Entry*font', 'Arial 9')
     
-    app = ChatMinimalTkinter(root)
+    app = Interfaz_Tkinter(root)
     root.protocol("WM_DELETE_WINDOW", app.salir)
     
     try:
@@ -784,5 +783,5 @@ def main():
 
 if __name__ == "__main__":
     print("Chat Ethernet Minimal - Tkinter")
-    print("Ejecutar con: sudo python3 app_tkinter_minimal.py")
+    print("Ejecutar con: sudo python3 interfaz.py")
     main()
