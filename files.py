@@ -8,7 +8,8 @@ class FileTransfer:
         self.archivos_en_progreso: Dict[str, dict] = {}
         self.archivos_recibiendo: Dict[str, dict] = {}
     
-    def send_file(self, file_path, dest_mac): #Envía un archivo fragmentado
+    def send_file(self, file_path, dest_mac):
+        """Envía un archivo fragmentado"""
         try:
             if not os.path.exists(file_path):
                 return False, "Archivo no encontrado"
@@ -64,12 +65,13 @@ class FileTransfer:
         except Exception as e:
             return False, f"Error enviando archivo: {str(e)}"
     
-    def receive_file(self, mensaje, source_mac): #Procesa la recepción de un archivo fragmentado
+    def receive_file(self, mensaje, source_mac):
+        """Procesa la recepción de un archivo fragmentado"""
+        
         try:
-            print(f"📨 FileTransfer.receive_file llamado: {mensaje[:100]}...")
+            print(f"FileTransfer.receive_file llamado: {mensaje[:50]}...")
             
             if mensaje.startswith("FILE_METADATA:"):
-                # Metadata del archivo
                 parts = mensaje.split(":")
                 if len(parts) >= 4:
                     nombre = parts[1]
@@ -84,10 +86,14 @@ class FileTransfer:
                         'datos': b'',
                         'timestamp': time.time()
                     }
-                    self.chat_app.mostrar_mensaje("Sistema", f"📥 Recibiendo archivo: {nombre} de {source_mac}")
+                    # Mensaje SIN EMOJIS
+                    mensaje_seguro = f"Recibiendo archivo: {nombre} de {source_mac}"
+                    if hasattr(self.chat_app, 'root'):
+                        self.chat_app.root.after(100, 
+                            lambda: self._mostrar_mensaje_seguro_en_chat("Sistema", mensaje_seguro))
+                    print(f"Metadata procesada: {nombre}, {total_chunks} chunks")
                 
             elif mensaje.startswith("FILE_CHUNK:"):
-                # Chunk de datos
                 parts = mensaje.split(":", 3)
                 if len(parts) >= 4:
                     chunk_num = int(parts[1])
@@ -95,7 +101,7 @@ class FileTransfer:
                     chunk_data = parts[3]
                     
                     if source_mac not in self.archivos_recibiendo:
-                        print(f"❌ Chunk {chunk_num} recibido sin metadata")
+                        print(f"Chunk {chunk_num} recibido sin metadata")
                         return
                     
                     archivo = self.archivos_recibiendo[source_mac]
@@ -109,44 +115,39 @@ class FileTransfer:
                     archivo['chunks_recibidos'].append(chunk_num)
                     archivo['datos'] += chunk_data_bytes
                     
-                    # Mostrar progreso
-                    progreso = len(archivo['chunks_recibidos']) / archivo['total_chunks'] * 100
-                    if chunk_num % 5 == 0:
-                        self.chat_app.mostrar_mensaje("Sistema", 
-                            f"📊 Progreso {archivo['nombre']}: {progreso:.1f}%")
+                    # Mostrar progreso solo ocasionalmente y SIN EMOJIS
+                    if chunk_num % 10 == 0:  # Solo cada 10 chunks
+                        progreso = len(archivo['chunks_recibidos']) / archivo['total_chunks'] * 100
+                        print(f"Progreso {archivo['nombre']}: {progreso:.1f}%")
                     
-                    print(f"✅ Chunk {chunk_num}/{total_chunks} procesado: {len(chunk_data_bytes)} bytes")
-                
             elif mensaje.startswith("FILE_END:"):
-                # Fin de transmisión
                 parts = mensaje.split(":")
                 if len(parts) >= 2:
                     nombre = parts[1]
                     
                     if source_mac not in self.archivos_recibiendo:
-                        print(f"❌ FILE_END recibido sin metadata para {nombre}")
+                        print(f"FILE_END recibido sin metadata para {nombre}")
                         return
                     
                     archivo = self.archivos_recibiendo[source_mac]
                     
                     if len(archivo['chunks_recibidos']) == archivo['total_chunks']:
-                        # Guardar archivo
+                        # Guardar archivo - esto es lo que causa el problema después
                         self._guardar_archivo(archivo, source_mac)
                     else:
-                        self.chat_app.mostrar_mensaje("Error", 
-                            f"❌ Archivo {nombre} incompleto. Recibidos: {len(archivo['chunks_recibidos'])}/{archivo['total_chunks']}")
-                        print(f"❌ Archivo incompleto: {len(archivo['chunks_recibidos'])}/{archivo['total_chunks']} chunks")
+                        error_msg = f"Archivo {nombre} incompleto. Recibidos: {len(archivo['chunks_recibidos'])}/{archivo['total_chunks']}"
+                        print(error_msg)
+                        if hasattr(self.chat_app, 'root'):
+                            self.chat_app.root.after(100, 
+                                lambda: self._mostrar_mensaje_seguro_en_chat("Error", error_msg))
                     
                     # Limpiar
                     del self.archivos_recibiendo[source_mac]
-                    print(f"✅ Procesamiento completado para: {nombre}")
-                    
+                    print(f"Procesamiento completado para: {nombre}")
         except Exception as e:
-            error_msg = f"❌ Error en receive_file: {str(e)}"
+            error_msg = f"❌ Error guardando archivo: {str(e)}"
             self.chat_app.mostrar_mensaje("Error", error_msg)
             print(error_msg)
-            import traceback
-            traceback.print_exc()
 
     def _guardar_archivo(self, archivo: dict, mac_origen: str):
         try:
@@ -172,13 +173,85 @@ class FileTransfer:
             
             # Mostrar mensaje de éxito
             tamaño = len(archivo['datos'])
-            mensaje = f"✅ Archivo guardado: {nombre_base} ({tamaño} bytes)"
-            self.chat_app.mostrar_mensaje("Sistema", mensaje)
-            
-            print(f"✅ Archivo guardado exitosamente: {nombre_archivo}")
+            mensaje = f"Archivo guardado: {nombre_base} ({tamaño} bytes)"
+             # Usar after para programar la actualización de UI de forma segura
+            if hasattr(self.chat_app, 'root'):
+                self.chat_app.root.after(100, lambda: self.chat_app.mostrar_mensaje("Sistema", mensaje))
+                
+            print(f"Archivo guardado exitosamente: {nombre_archivo}")
             
         except Exception as e:
-            error_msg = f"❌ Error guardando archivo: {str(e)}"
+            error_msg = f"Error guardando archivo: {str(e)}"
             self.chat_app.mostrar_mensaje("Error", error_msg)
             print(error_msg)
-   
+    # def handle_file_metadata(self, message, source_mac):
+    #     try:
+    #         metadata_str = message.split("FILE_METADATA:")[1]
+    #         metadata = json.loads(metadata_str)
+            
+    #         # Inicializar recepción
+    #         self.current_file = {
+    #             'name': metadata['name'],
+    #             'size': metadata['size'],
+    #             'hash': metadata['hash'],
+    #             'total_chunks': metadata['chunks'],
+    #             'received_chunks': 0,
+    #             'data': bytearray(),
+    #             'source_mac': source_mac
+    #         }
+            
+    #         print(f"Recibiendo archivo: {metadata['name']} ({metadata['size']} bytes)")
+            
+    #     except Exception as e:
+    #         print(f"Error procesando metadata: {e}")
+    
+    # def handle_file_chunk(self, message, source_mac):
+    #     try:
+    #         chunk_str = message.split("FILE_CHUNK:")[1]
+    #         chunk_data = json.loads(chunk_str)
+            
+    #         if hasattr(self, 'current_file') and self.current_file['hash'] == chunk_data['hash']:
+    #             chunk = base64.b64decode(chunk_data['data'])
+    #             self.current_file['data'].extend(chunk)
+    #             self.current_file['received_chunks'] += 1
+                
+    #             # Mostrar progreso
+    #             progress = (self.current_file['received_chunks'] / self.current_file['total_chunks']) * 100
+    #             print(f"Progreso: {progress:.1f}%")
+                
+    #     except Exception as e:
+    #         print(f"Error procesando chunk: {e}")
+    
+    # def handle_file_end(self, message, source_mac):
+    #     try:
+    #         file_hash = message.split("FILE_END:")[1]
+            
+    #         if hasattr(self, 'current_file') and self.current_file['hash'] == file_hash:
+    #             # Verificar integridad
+    #             received_hash = self.calculate_data_hash(bytes(self.current_file['data']))
+                
+    #             if received_hash == file_hash and len(self.current_file['data']) == self.current_file['size']:
+    #                 # Guardar archivo
+    #                 safe_name = f"recibido_{self.current_file['name']}"
+    #                 with open(safe_name, 'wb') as f:
+    #                     f.write(self.current_file['data'])
+                    
+    #                 print(f"Archivo guardado como: {safe_name}")
+    #                 del self.current_file
+    #             else:
+    #                 print("Error: Archivo corrupto o incompleto")
+                    
+    #     except Exception as e:
+    #         print(f"Error finalizando recepción: {e}")
+    
+    # def calculate_file_hash(self, file_path):
+    #     """Calcula hash SHA256 de un archivo"""
+    #     hash_sha256 = hashlib.sha256()
+    #     with open(file_path, "rb") as f:
+    #         for chunk in iter(lambda: f.read(4096), b""):
+    #             hash_sha256.update(chunk)
+    #     return hash_sha256.hexdigest()
+    
+    # def calculate_data_hash(self, data):
+    #     """Calcula hash SHA256 de datos en memoria"""
+    #     return hashlib.sha256(data).hexdigest()
