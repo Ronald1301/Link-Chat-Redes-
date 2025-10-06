@@ -246,10 +246,10 @@ class Envio_recibo_frames:
         
         print(f"✅ Frame aceptado: es para nosotros")
 
-         # Verificar si es un fragmento
-        if frame.total_fragmentos > 1:
-            print(f"🔧 Frame fragmentado detectado: {frame.fragmento}/{frame.total_fragmentos}")
-            return self._procesar_fragmento(frame)
+        #  # Verificar si es un fragmento
+        # if frame.total_fragmentos > 1:
+        #     print(f"🔧 Frame fragmentado detectado: {frame.fragmento}/{frame.total_fragmentos}")
+        #     return self._procesar_fragmento(frame)
 
         if frame.tipo_mensaje == Tipo_Mensaje.archivo:
             # Para archivos, procesar directamente
@@ -316,15 +316,12 @@ class Envio_recibo_frames:
             print(f"🔧 _procesar_fragmento: MAC origen: {frame.mac_origen}")
             print(f"🔧 _procesar_fragmento: Tamaño datos: {len(frame.datos)} bytes")
             
-            # VERIFICACIÓN CRÍTICA: Asegurar que tenemos datos
             if frame.datos is None or len(frame.datos) == 0:
                 print(f"❌ _procesar_fragmento: Fragmento {frame.fragmento} tiene datos vacíos")
                 return None
-            
+        
             # Determinar el total real de fragmentos
             if frame.total_fragmentos == 0:
-                # Si total_fragmentos es 0, significa fragmentación simple
-                # El total real es el número del último fragmento + 1
                 total_real = frame.fragmento + 1
             else:
                 total_real = frame.total_fragmentos
@@ -356,9 +353,9 @@ class Envio_recibo_frames:
                 
                 return self.process_complete_frame(frame_completo)
             else:
-                # Aún faltan fragmentos
+                # Aún faltan fragmentos - MOSTRAR ESTADO ACTUAL
                 estado = self.fragment_manager.obtener_estado_ensamblaje()
-                print(f"📦 Esperando más fragmentos... ({estado['mensajes_pendientes']} mensajes pendientes)")
+                print(f"📦 Esperando más fragmentos... Estado: {estado}")
                 return None
                     
         except Exception as e:

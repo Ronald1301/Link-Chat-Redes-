@@ -67,11 +67,11 @@ class FileTransfer:
     
     def receive_file(self, mensaje, source_mac):
         """Procesa la recepción de un archivo fragmentado"""
+        
         try:
-            print(f"📨 FileTransfer.receive_file llamado: {mensaje[:100]}...")
+            print(f"FileTransfer.receive_file llamado: {mensaje[:50]}...")
             
             if mensaje.startswith("FILE_METADATA:"):
-                # Metadata del archivo
                 parts = mensaje.split(":")
                 if len(parts) >= 4:
                     nombre = parts[1]
@@ -86,11 +86,14 @@ class FileTransfer:
                         'datos': b'',
                         'timestamp': time.time()
                     }
-                    self.chat_app.mostrar_mensaje("Sistema", f"📥 Recibiendo archivo: {nombre} de {source_mac}")
-                    print(f"✅ Metadata procesada: {nombre}, {total_chunks} chunks")
+                    # Mensaje SIN EMOJIS
+                    mensaje_seguro = f"Recibiendo archivo: {nombre} de {source_mac}"
+                    if hasattr(self.chat_app, 'root'):
+                        self.chat_app.root.after(100, 
+                            lambda: self._mostrar_mensaje_seguro_en_chat("Sistema", mensaje_seguro))
+                    print(f"Metadata procesada: {nombre}, {total_chunks} chunks")
                 
             elif mensaje.startswith("FILE_CHUNK:"):
-                # Chunk de datos
                 parts = mensaje.split(":", 3)
                 if len(parts) >= 4:
                     chunk_num = int(parts[1])
@@ -98,7 +101,7 @@ class FileTransfer:
                     chunk_data = parts[3]
                     
                     if source_mac not in self.archivos_recibiendo:
-                        print(f"❌ Chunk {chunk_num} recibido sin metadata")
+                        print(f"Chunk {chunk_num} recibido sin metadata")
                         return
                     
                     archivo = self.archivos_recibiendo[source_mac]
@@ -112,44 +115,39 @@ class FileTransfer:
                     archivo['chunks_recibidos'].append(chunk_num)
                     archivo['datos'] += chunk_data_bytes
                     
-                    # Mostrar progreso
-                    progreso = len(archivo['chunks_recibidos']) / archivo['total_chunks'] * 100
-                    if chunk_num % 5 == 0:
-                        self.chat_app.mostrar_mensaje("Sistema", 
-                            f"📊 Progreso {archivo['nombre']}: {progreso:.1f}%")
+                    # Mostrar progreso solo ocasionalmente y SIN EMOJIS
+                    if chunk_num % 10 == 0:  # Solo cada 10 chunks
+                        progreso = len(archivo['chunks_recibidos']) / archivo['total_chunks'] * 100
+                        print(f"Progreso {archivo['nombre']}: {progreso:.1f}%")
                     
-                    print(f"✅ Chunk {chunk_num}/{total_chunks} procesado: {len(chunk_data_bytes)} bytes")
-                
             elif mensaje.startswith("FILE_END:"):
-                # Fin de transmisión
                 parts = mensaje.split(":")
                 if len(parts) >= 2:
                     nombre = parts[1]
                     
                     if source_mac not in self.archivos_recibiendo:
-                        print(f"❌ FILE_END recibido sin metadata para {nombre}")
+                        print(f"FILE_END recibido sin metadata para {nombre}")
                         return
                     
                     archivo = self.archivos_recibiendo[source_mac]
                     
                     if len(archivo['chunks_recibidos']) == archivo['total_chunks']:
-                        # Guardar archivo
+                        # Guardar archivo - esto es lo que causa el problema después
                         self._guardar_archivo(archivo, source_mac)
                     else:
-                        self.chat_app.mostrar_mensaje("Error", 
-                            f"❌ Archivo {nombre} incompleto. Recibidos: {len(archivo['chunks_recibidos'])}/{archivo['total_chunks']}")
-                        print(f"❌ Archivo incompleto: {len(archivo['chunks_recibidos'])}/{archivo['total_chunks']} chunks")
+                        error_msg = f"Archivo {nombre} incompleto. Recibidos: {len(archivo['chunks_recibidos'])}/{archivo['total_chunks']}"
+                        print(error_msg)
+                        if hasattr(self.chat_app, 'root'):
+                            self.chat_app.root.after(100, 
+                                lambda: self._mostrar_mensaje_seguro_en_chat("Error", error_msg))
                     
                     # Limpiar
                     del self.archivos_recibiendo[source_mac]
-                    print(f"✅ Procesamiento completado para: {nombre}")
-                    
+                    print(f"Procesamiento completado para: {nombre}")
         except Exception as e:
-            error_msg = f"❌ Error en receive_file: {str(e)}"
+            error_msg = f"❌ Error guardando archivo: {str(e)}"
             self.chat_app.mostrar_mensaje("Error", error_msg)
             print(error_msg)
-            import traceback
-            traceback.print_exc()
 
     def _guardar_archivo(self, archivo: dict, mac_origen: str):
         try:
@@ -175,13 +173,15 @@ class FileTransfer:
             
             # Mostrar mensaje de éxito
             tamaño = len(archivo['datos'])
-            mensaje = f"✅ Archivo guardado: {nombre_base} ({tamaño} bytes)"
-            self.chat_app.mostrar_mensaje("Sistema", mensaje)
-            
-            print(f"✅ Archivo guardado exitosamente: {nombre_archivo}")
+            mensaje = f"Archivo guardado: {nombre_base} ({tamaño} bytes)"
+             # Usar after para programar la actualización de UI de forma segura
+            if hasattr(self.chat_app, 'root'):
+                self.chat_app.root.after(100, lambda: self.chat_app.mostrar_mensaje("Sistema", mensaje))
+                
+            print(f"Archivo guardado exitosamente: {nombre_archivo}")
             
         except Exception as e:
-            error_msg = f"❌ Error guardando archivo: {str(e)}"
+            error_msg = f"Error guardando archivo: {str(e)}"
             self.chat_app.mostrar_mensaje("Error", error_msg)
             print(error_msg)
     # def handle_file_metadata(self, message, source_mac):

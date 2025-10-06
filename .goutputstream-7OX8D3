@@ -16,25 +16,10 @@ if not os.path.exists("descargas"):
 
 # Configuración para VirtualBox - evitar problemas gráficos
 os.environ['TK_SILENCE_DEPRECATION'] = '1'
-os.environ['XLIB_SKIP_ARGB_VISUALS'] = '1'
-os.environ['QT_X11_NO_MITSHM'] = '1'
-os.environ['_JAVA_AWT_WM_NONREPARENTING'] = '1'
-
-# Configuración específica para VirtualBox
-if 'virtualbox' in os.environ.get('SESSION_MANAGER', '').lower():
-    os.environ['GDK_BACKEND'] = 'x11'
 
 def configurar_tkinter():
     import tkinter as tk
-    
     tk.Button._default_state = 'normal'
-    
-    # Forzar modo simple para evitar problemas de renderizado
-    try:
-        # Intentar deshabilitar aceleración por hardware
-        os.environ['TK_FONT'] = 'Arial 10'    
-    except:
-        pass
     
 configurar_tkinter()
 
@@ -366,11 +351,6 @@ class ChatMinimalTkinter:
             messagebox.showerror("Error", "Comunicador no inicializado")
             return
         
-        # ADVERTENCIA si el destino es broadcast
-        if self.destino_actual.upper() == "FF:FF:FF:FF:FF:FF":
-            if not messagebox.askyesno("Advertencia", "Estás enviando a todos (broadcast). ¿Continuar?"):
-                return
-        
         # Deshabilitar botones durante el envío
         self.btn_enviar_archivo.config(state=tk.DISABLED)
         self.btn_seleccionar.config(state=tk.DISABLED)
@@ -402,8 +382,10 @@ class ChatMinimalTkinter:
     def procesar_archivo_recibido(self, frame):
         """Procesa y guarda un archivo recibido"""
         try:
-            print(f"Procesando archivo recibido:")
+            print(f"📥 Procesando archivo recibido:")
+            print(f"   - Datos: {frame.datos[:100] if frame.datos else 'VACIO'}")
             print(f"   - Nombre archivo: {getattr(frame, 'nombre_archivo', 'No disponible')}")
+            
             # Convertir datos a string si son bytes
             if isinstance(frame.datos, bytes):
                 try:
@@ -427,7 +409,7 @@ class ChatMinimalTkinter:
                 self._guardar_archivo_no_fragmentado(frame)
                 
         except Exception as e:
-            error_msg = f" Error procesando archivo: {str(e)}"
+            error_msg = f"❌ Error procesando archivo: {str(e)}"
             self.mostrar_mensaje("Error", error_msg)
             print(error_msg)
             import traceback
@@ -445,7 +427,7 @@ class ChatMinimalTkinter:
                 nombre_archivo = f"archivo_recibido_{timestamp}.bin"
             
             if not datos_archivo:
-                print("No hay datos en el frame para guardar")
+                print("❌ No hay datos en el frame para guardar")
                 return
             
             # Crear directorio de descargas si no existe
@@ -469,13 +451,13 @@ class ChatMinimalTkinter:
             
             # Mostrar mensaje de éxito
             tamaño = len(datos_archivo)
-            mensaje = f"Archivo recibido: {nombre_base} ({tamaño} bytes)"
+            mensaje = f"📁 Archivo recibido: {nombre_base} ({tamaño} bytes)"
             self.mostrar_mensaje("Sistema", mensaje)
             
-            print(f" Archivo guardado: {nombre_completo}")
+            print(f"✅ Archivo guardado: {nombre_completo}")
             
         except Exception as e:
-            error_msg = f"Error guardando archivo no fragmentado: {str(e)}"
+            error_msg = f"❌ Error guardando archivo no fragmentado: {str(e)}"
             self.mostrar_mensaje("Error", error_msg)
             print(error_msg)
     
@@ -498,25 +480,25 @@ class ChatMinimalTkinter:
     def actualizar_destinos(self):
         """Actualiza la lista de destinos disponibles"""
         try:
+            # Crear lista en formato "Nombre (MAC)"
             valores_combobox = [f"{nombre} ({mac})" for mac, nombre in self.contactos.items()]
+            
+            # Actualizar los valores del combobox
             self.destino_combo['values'] = valores_combobox
-
-            # Si no hay selección actual, selecciona el primer contacto que NO sea broadcast
-            if valores_combobox and not self.destino_var.get():
-                no_broadcast = [item for item in valores_combobox if "FF:FF:FF:FF:FF:FF" not in item]
-                if no_broadcast:
-                    self.destino_var.set(no_broadcast[0])
-                    self.actualizar_destino()
-                else:
-                    # Si solo hay broadcast, selecciona ese
-                    self.destino_var.set(valores_combobox[0])
-                    self.actualizar_destino()
-
+            
             print(f"🔧 Destinos disponibles: {valores_combobox}")
-
+            
+            # Si no hay selección actual, seleccionar broadcast por defecto
+            if valores_combobox and not self.destino_var.get():
+                # Buscar el valor de broadcast en la lista
+                broadcast_item = next((item for item in valores_combobox if "FF:FF:FF:FF:FF:FF" in item), None)
+                if broadcast_item:
+                    self.destino_var.set(broadcast_item)
+                    self.actualizar_destino()
+                    print(f"🔧 Destino establecido por defecto: {self.destino_actual}")
+                
         except Exception as e:
             print(f"❌ Error actualizando destinos: {e}")
-# ...existing code...
     
     def seleccionar_destino(self, event=None):
         """Selecciona destino de la lista"""
@@ -629,13 +611,7 @@ class ChatMinimalTkinter:
         mensaje = self.mensaje_entry.get('1.0', tk.END).strip()
         if not mensaje:
             return
-        
-         # ADVERTENCIA si el destino es broadcast
-        if self.destino_actual.upper() == "FF:FF:FF:FF:FF:FF":
-            if not messagebox.askyesno("Advertencia", "Estás enviando a todos (broadcast). ¿Continuar?"):
-                return
-        
-        #list = None
+        list = None
         self.mostrar_mensaje("Yo",  f"→ {mensaje}")
         list = self.com.crear_frame(self.destino_actual, Tipo_Mensaje.texto, mensaje)
         self.mensaje_var.set("")
@@ -712,7 +688,7 @@ class ChatMinimalTkinter:
             print(f"❌ Error en poll_incoming: {e}")
         
         # Programar que se vuelva a ejecutar más frecuentemente
-        self.root.after(40, self.poll_incoming)
+        self.root.after(10, self.poll_incoming)
 
         # def _enviar(self, mensaje):
     
