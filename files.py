@@ -90,7 +90,7 @@ class FileTransfer:
                     mensaje_seguro = f"Recibiendo archivo: {nombre} de {source_mac}"
                     if hasattr(self.chat_app, 'root'):
                         self.chat_app.root.after(100, 
-                            lambda: self._mostrar_mensaje_seguro_en_chat("Sistema", mensaje_seguro))
+                            lambda: self.chat_app.mostrar_mensaje("Sistema", mensaje_seguro))
                     print(f"Metadata procesada: {nombre}, {total_chunks} chunks")
                 
             elif mensaje.startswith("FILE_CHUNK:"):
@@ -139,7 +139,7 @@ class FileTransfer:
                         print(error_msg)
                         if hasattr(self.chat_app, 'root'):
                             self.chat_app.root.after(100, 
-                                lambda: self._mostrar_mensaje_seguro_en_chat("Error", error_msg))
+                                lambda: self.chat_app.mostrar_mensaje("Error", error_msg))
                     
                     # Limpiar
                     del self.archivos_recibiendo[source_mac]

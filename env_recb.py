@@ -246,16 +246,22 @@ class Envio_recibo_frames:
         
         print(f"✅ Frame aceptado: es para nosotros")
 
-        #  # Verificar si es un fragmento
-        # if frame.total_fragmentos > 1:
-        #     print(f"🔧 Frame fragmentado detectado: {frame.fragmento}/{frame.total_fragmentos}")
-        #     return self._procesar_fragmento(frame)
+        if frame.total_fragmentos == 0 and frame.fragmento == 0:
+                return self.process_complete_frame(frame)
+        
+
+         # Verificar si es un fragmento
+        
 
         if frame.tipo_mensaje == Tipo_Mensaje.archivo:
             # Para archivos, procesar directamente
             return self.process_complete_frame(frame)
         elif frame.tipo_mensaje == Tipo_Mensaje.texto:
             # Para texto, verificar si está fragmentado
+            if frame.total_fragmentos > 1:
+                print(f"🔧 Frame fragmentado detectado: {frame.fragmento}/{frame.total_fragmentos}")
+                return self._procesar_fragmento(frame)
+            
             if frame.total_fragmentos == 0 and frame.fragmento == 0:
                 return self.process_complete_frame(frame)
         return None

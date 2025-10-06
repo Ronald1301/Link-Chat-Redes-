@@ -79,7 +79,7 @@ class Frame:
     
     def hacia_bytes(self) -> bytes:
         """Convierte el Frame a bytes listo para enviar"""
-        print(f"🔍 hacia_bytes: MAC destino={self.mac_destino}, MAC origen={self.mac_origen}")
+        print(f"hacia_bytes: MAC destino={self.mac_destino}, MAC origen={self.mac_origen}")
     
         if isinstance(self.datos, str):
             payload_bytes = self.datos.encode('utf-8')
@@ -90,8 +90,8 @@ class Frame:
         mac_dest_clean = self.mac_destino.replace(":", "").lower()
         mac_orig_clean = self.mac_origen.replace(":", "").lower()
         
-        print(f"🔍 MAC destino limpia: {mac_dest_clean}")
-        print(f"🔍 MAC origen limpia: {mac_orig_clean}")
+        print(f"MAC destino limpia: {mac_dest_clean}")
+        print(f"MAC origen limpia: {mac_orig_clean}")
         
         length_bytes = len(payload_bytes).to_bytes(2, 'big')  
         msg_type_byte = self.tipo_mensaje.value if isinstance(self.tipo_mensaje, Enum) else int(self.tipo_mensaje)
@@ -263,7 +263,7 @@ class Frame:
     def bytes_to_mac(mac_bytes: bytes) -> str:
         """Convierte bytes de MAC a string formateado"""
         mac_str = ':'.join(f'{b:02x}' for b in mac_bytes)
-        print(f"🔍 bytes_to_mac: {mac_bytes.hex()} -> {mac_str}")
+        print(f" bytes_to_mac: {mac_bytes.hex()} -> {mac_str}")
         return mac_str
         
     def verify_crc(self, frame_data: bytes) -> bool:
@@ -277,88 +277,11 @@ class Frame:
         print(f"frame sin crc={frame_without_crc}, crc recivido= {crc_received}, crc calculado= {crc_calculated}")
         
         return True #crc_received == crc_calculated
-    
-    #@classmethod
-    # def desde_bytes(cls, datos: bytes) -> 'Frame':
-    #     if len(datos) < 72:  # Mínimo para frame sin fragmentación
-    #         raise ValueError(f"Frame demasiado pequeño: {len(datos)} bytes")
-        
-    #     # Extraer componentes básicos
-    #     preamble = datos[0:8]
-    #     expected_preamble = b'\xAA' * 7 + b'\xAB'
-    #     if preamble != expected_preamble:
-    #         raise ValueError(f"Preamble incorrecto: esperado {expected_preamble.hex()}, recibido {preamble.hex()}")
-    #     mac_dest_bytes = datos[8:14]
-    #     mac_orig_bytes = datos[14:20]
-    #     tipo = struct.unpack('>H', datos[20:22])[0]
-        
-    #     mac_destino = ':'.join(f'{b:02x}' for b in mac_dest_bytes)
-    #     mac_origen = ':'.join(f'{b:02x}' for b in mac_orig_bytes)
-        
-    #     # Determinar si es fragmento (basado en el tipo o en la estructura)
-    #     # Asumimos que si después del tipo hay 8 bytes que parecen un header de fragmento, es fragmento
-    #     es_fragmento = False
-    #     id_mensaje = 0
-    #     num_fragmento = 0
-    #     total_fragmentos = 1
-        
-    #     # Los datos comienzan en el byte 22, pero si es fragmento, los primeros 8 bytes son header
-    #     try:
-    #         if len(datos) >= 30:  # Suficiente para tener header de fragmento
-    #             # Intentar leer header de fragmento
-    #             id_mensaje, num_fragmento, total_fragmentos = struct.unpack('>QHH', datos[22:34])
-    #             es_fragmento = True
-    #             datos_payload = datos[34:-4]  # Saltar header de fragmento
-    #         else:
-    #             datos_payload = datos[22:-4]  # Datos normales
-    #     except:
-    #         # Si falla la deserialización, no es fragmento
-    #         datos_payload = datos[22:-4]
-        
-    #     # CRC (últimos 4 bytes)
-    #     crc = struct.unpack('>I', datos[-4:])[0]
-        
-    #     return cls(
-    #         preamble=preamble,
-    #         mac_destino=mac_destino,
-    #         mac_origen=mac_origen,
-    #         tipo=tipo,
-    #         datos=datos_payload,
-    #         crc=crc,
-    #         es_fragmento=es_fragmento,
-    #         id_mensaje=id_mensaje,
-    #         num_fragmento=num_fragmento,
-    #         total_fragmentos=total_fragmentos
-    #     )
-    
-    # def calcular_crc(self) -> int:
-    #     # Incluir todos los campos en el cálculo del CRC para mayor robustez
-    #     data = (self.mac_destino.encode() + self.mac_origen.encode() + 
-    #             struct.pack('!H', self.tipo) + self.datos)
-        
-    #     if self.es_fragmento:
-    #         data += struct.pack('>QHH', self.id_mensaje, self.num_fragmento, self.total_fragmentos)
-        
-    #     checksum = sum(data) & 0xFFFFFFFF
-    #     return checksum
-
+ 
     def actualizar_crc(self, data:bytes) -> bytes:
         crc = binascii.crc32(data) & 0xffffffff
         return crc.to_bytes(4, 'big')
 
-    # def __str__(self) -> str:
-    #     base = f"Frame(MAC_Dest: {self.mac_destino}, MAC_Orig: {self.mac_origen}, Tipo: 0x{self.tipo:04x}"
-    #     if self.es_fragmento:
-    #         base += f", Fragmento {self.num_fragmento+1}/{self.total_fragmentos} (ID: {self.id_mensaje})"
-    #     base += f", Datos: {len(self.datos)} bytes, CRC: 0x{self.crc:08x})"
-    #     return base
-
-    # @property
-    # def tamaño_total(self) -> int:
-    #     tamaño_base = 26  # Cabecera Ethernet básica
-    #     if self.es_fragmento:
-    #         tamaño_base += 8  # Header de fragmentación
-    #     return tamaño_base + len(self.datos)
 
 class Tipo_Mensaje(Enum):
     texto = 1
