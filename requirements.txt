@@ -1,0 +1,2 @@
+# No se necesitan dependencias externas específicas
+# Python 3.9+ viene con todo lo necesario

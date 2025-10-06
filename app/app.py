@@ -351,6 +351,11 @@ class ChatMinimalTkinter:
             messagebox.showerror("Error", "Comunicador no inicializado")
             return
         
+        # ADVERTENCIA si el destino es broadcast
+        if self.destino_actual.upper() == "FF:FF:FF:FF:FF:FF":
+            if not messagebox.askyesno("Advertencia", "Estás enviando a todos (broadcast). ¿Continuar?"):
+                return
+        
         # Deshabilitar botones durante el envío
         self.btn_enviar_archivo.config(state=tk.DISABLED)
         self.btn_seleccionar.config(state=tk.DISABLED)
@@ -480,25 +485,25 @@ class ChatMinimalTkinter:
     def actualizar_destinos(self):
         """Actualiza la lista de destinos disponibles"""
         try:
-            # Crear lista en formato "Nombre (MAC)"
             valores_combobox = [f"{nombre} ({mac})" for mac, nombre in self.contactos.items()]
-            
-            # Actualizar los valores del combobox
             self.destino_combo['values'] = valores_combobox
-            
-            print(f"🔧 Destinos disponibles: {valores_combobox}")
-            
-            # Si no hay selección actual, seleccionar broadcast por defecto
+
+            # Si no hay selección actual, selecciona el primer contacto que NO sea broadcast
             if valores_combobox and not self.destino_var.get():
-                # Buscar el valor de broadcast en la lista
-                broadcast_item = next((item for item in valores_combobox if "FF:FF:FF:FF:FF:FF" in item), None)
-                if broadcast_item:
-                    self.destino_var.set(broadcast_item)
+                no_broadcast = [item for item in valores_combobox if "FF:FF:FF:FF:FF:FF" not in item]
+                if no_broadcast:
+                    self.destino_var.set(no_broadcast[0])
                     self.actualizar_destino()
-                    print(f"🔧 Destino establecido por defecto: {self.destino_actual}")
-                
+                else:
+                    # Si solo hay broadcast, selecciona ese
+                    self.destino_var.set(valores_combobox[0])
+                    self.actualizar_destino()
+
+            print(f"🔧 Destinos disponibles: {valores_combobox}")
+
         except Exception as e:
             print(f"❌ Error actualizando destinos: {e}")
+# ...existing code...
     
     def seleccionar_destino(self, event=None):
         """Selecciona destino de la lista"""
@@ -611,7 +616,13 @@ class ChatMinimalTkinter:
         mensaje = self.mensaje_entry.get('1.0', tk.END).strip()
         if not mensaje:
             return
-        list = None
+        
+         # ADVERTENCIA si el destino es broadcast
+        if self.destino_actual.upper() == "FF:FF:FF:FF:FF:FF":
+            if not messagebox.askyesno("Advertencia", "Estás enviando a todos (broadcast). ¿Continuar?"):
+                return
+        
+        #list = None
         self.mostrar_mensaje("Yo",  f"→ {mensaje}")
         list = self.com.crear_frame(self.destino_actual, Tipo_Mensaje.texto, mensaje)
         self.mensaje_var.set("")
