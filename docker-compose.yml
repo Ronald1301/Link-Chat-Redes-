@@ -1,0 +1,43 @@
+services:
+  link-chat-1:
+    build: .
+    container_name: link-chat-1
+    privileged: true
+    networks:
+      linkchat_net:
+        ipv4_address: 192.168.1.101
+    volumes:
+      - ./LinkChat_Files1:/app/LinkChat_Files
+    environment:
+      - DISPLAY=host.docker.internal:0.0
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun
+    stdin_open: true
+    tty: true
+
+  link-chat-2:
+    build: .
+    container_name: link-chat-2
+    privileged: true
+    networks:
+      linkchat_net:
+        ipv4_address: 192.168.1.102
+    volumes:
+      - ./LinkChat_Files2:/app/LinkChat_Files
+    environment:
+      - DISPLAY=host.docker.internal:0.0
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun
+    stdin_open: true
+    tty: true
+
+networks:
+  linkchat_net:
+    external: true
+    name: linkchat_macvlan
