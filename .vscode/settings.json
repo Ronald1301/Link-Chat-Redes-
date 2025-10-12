@@ -1,0 +1,7 @@
+{
+    "python.testing.pytestArgs": [
+        "LinkChat_Files"
+    ],
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestEnabled": true
+}

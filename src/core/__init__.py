@@ -1,0 +1,1 @@
+# Link-Chat 2.0 Core Module - Ethernet Protocol Implementation
