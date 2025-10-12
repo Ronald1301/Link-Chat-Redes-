@@ -35,7 +35,7 @@ def configurar_tkinter():
     # Forzar modo simple para evitar problemas de renderizado
     try:
         # Intentar deshabilitar aceleración por hardware
-        os.environ['TK_FONT'] = 'Arial 10'    
+        os.environ['TK_FONT'] = 'Arial 14'  # Aumentado para mejor legibilidad    
     except:
         pass
     
@@ -56,7 +56,7 @@ class ChatMinimalTkinter:
         self.entry_bg = '#404040'
         self.button_bg  = '#505050'
         self.border_color = 'black'
-        self.font_size = 11
+        self.font_size = 14  # Aumentado para mejor legibilidad
 
          
         # Colores para burbujas de chat
@@ -501,29 +501,52 @@ class ChatMinimalTkinter:
             print(f"Procesando archivo recibido:")
             print(f"   - Nombre archivo: {getattr(frame, 'nombre_archivo', 'No disponible')}")
             # Convertir datos a string si son bytes
-            if isinstance(frame.datos, bytes):
+            # Para archivos, pasar datos raw para evitar corrupción
+            datos_raw = frame.datos
+            
+            # Solo intentar decodificar para preview, no para procesamiento
+            try:
+                if isinstance(datos_raw, bytes):
+                    mensaje_preview = datos_raw.decode('utf-8', errors='ignore')[:100]
+                else:
+                    mensaje_preview = str(datos_raw)[:100]
+            except:
+                mensaje_preview = f"<datos binarios {len(datos_raw) if datos_raw else 0} bytes>"
+            
+            print(f"   - Datos recibidos: {mensaje_preview}...")
+            
+            # Procesar según el tipo de datos - pasar datos raw al file_transfer
+            if isinstance(datos_raw, bytes) and len(datos_raw) >= 2:
+                # Intentar nuevo formato binario primero
                 try:
-                    mensaje = frame.datos.decode('utf-8', errors='ignore')
+                    header_length = int.from_bytes(datos_raw[:2], 'big')
+                    if len(datos_raw) >= 2 + header_length:
+                        header = datos_raw[2:2+header_length].decode('utf-8')
+                        if header.startswith(('FILE_CHUNK:', 'FILE_METADATA:', 'FILE_END:')):
+                            self.file_transfer.receive_file(datos_raw, frame.mac_origen)
+                            return
                 except:
-                    mensaje = frame.datos.decode('latin-1', errors='ignore')
-            else:
-                mensaje = str(frame.datos)
+                    pass
             
-            print(f"   - Mensaje decodificado: {mensaje[:100]}...")
-            
-            # Procesar según el tipo de mensaje de archivo
-            if mensaje.startswith('FOLDER_TRANSFER:'):
-                # Procesar metadata de carpeta
-                if self.folder_transfer:
-                    self.folder_transfer.receive_folder_metadata(mensaje, frame.mac_origen)
-            elif mensaje.startswith('FILE_METADATA:'):
-                self.file_transfer.receive_file(mensaje, frame.mac_origen)
-            elif mensaje.startswith('FILE_CHUNK:'):
-                self.file_transfer.receive_file(mensaje, frame.mac_origen)
-            elif mensaje.startswith('FILE_END:'):
-                self.file_transfer.receive_file(mensaje, frame.mac_origen)
-            else:
-                # Archivo no fragmentado - guardar directamente
+            # Intentar formato legacy (string)
+            try:
+                if isinstance(datos_raw, bytes):
+                    mensaje = datos_raw.decode('utf-8', errors='ignore')
+                else:
+                    mensaje = str(datos_raw)
+                
+                if mensaje.startswith(('FOLDER_START:', 'FOLDER_FILE:', 'FOLDER_END:')):
+                    # Procesar mensajes de transferencia de carpeta
+                    if self.folder_transfer:
+                        self.folder_transfer.handle_folder_message(mensaje, frame.mac_origen)
+                elif mensaje.startswith(('FILE_METADATA:', 'FILE_CHUNK:', 'FILE_END:')):
+                    self.file_transfer.receive_file(mensaje, frame.mac_origen)
+                else:
+                    # Archivo no fragmentado - guardar directamente
+                    self._guardar_archivo_no_fragmentado(frame)
+            except Exception as e:
+                print(f"Error procesando datos como string: {e}")
+                # Intentar como archivo no fragmentado
                 self._guardar_archivo_no_fragmentado(frame)
                 
         except Exception as e:
@@ -548,8 +571,8 @@ class ChatMinimalTkinter:
                 print("No hay datos en el frame para guardar")
                 return
             
-            # Crear directorio de descargas si no existe
-            download_dir = "descargas"
+            # Crear directorio de downloads si no existe
+            download_dir = "downloads"
             if not os.path.exists(download_dir):
                 os.makedirs(download_dir)
             
@@ -567,7 +590,13 @@ class ChatMinimalTkinter:
             with open(nombre_completo, 'wb') as f:
                 f.write(datos_archivo)
             
-            # Mostrar mensaje de éxito
+            # Verificar si es parte de una transferencia de carpeta
+            if self.folder_transfer and self.folder_transfer.check_folder_file_received(nombre_completo, frame.mac_origen):
+                # Es parte de una carpeta, el folder_transfer se encarga del mensaje
+                print(f" Archivo de carpeta procesado: {nombre_completo}")
+                return
+            
+            # Mostrar mensaje de éxito para archivo individual
             tamaño = len(datos_archivo)
             mensaje = f"Archivo recibido: {nombre_base} ({tamaño} bytes)"
             self.mostrar_mensaje("Sistema", mensaje)
@@ -1053,7 +1082,8 @@ class ChatMinimalTkinter:
             return
         
         # Procesar mensajes de carpetas
-        if self.folder_transfer and self.folder_transfer.receive_folder_metadata(mensaje, mac_origen):
+        if self.folder_transfer and mensaje.startswith(('FOLDER_START:', 'FOLDER_FILE:', 'FOLDER_END:')):
+            self.folder_transfer.handle_folder_message(mensaje, mac_origen)
             return
         
         # Procesar mensaje normal

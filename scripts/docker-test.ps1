@@ -1,4 +1,4 @@
-# Link-Chat 2.0 - Script Automático de Testing Docker
+# Link-Chat 3.0 - Script Automático de Testing Docker
 # ====================================================
 
 param(
@@ -7,7 +7,7 @@ param(
     [string]$Action = "setup"
 )
 
-Write-Host "🚀 Link-Chat 2.0 - Docker Testing Automation" -ForegroundColor Cyan
+Write-Host "🚀 Link-Chat 3.0 - Docker Testing Automation" -ForegroundColor Cyan
 Write-Host "=============================================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -27,8 +27,49 @@ function Write-Error($Message) {
     Write-Host "❌ $Message" -ForegroundColor Red
 }
 
+function Setup-MacvlanNetwork {
+    Write-Info "Verificando red macvlan..."
+    
+    # Verificar si la red ya existe
+    $networkExists = docker network ls --format "{{.Name}}" | Select-String -Pattern "^chat_macvlan$"
+    
+    if ($networkExists) {
+        Write-Success "Red chat_macvlan ya existe"
+        return $true
+    }
+    
+    Write-Info "Creando red macvlan chat_macvlan..."
+    
+    # Intentar crear la red macvlan
+    # Nota: En Windows con Docker Desktop, macvlan puede tener limitaciones
+    # Como alternativa, usaremos bridge con configuración específica
+    docker network create --driver bridge --subnet=192.168.100.0/24 --gateway=192.168.100.1 chat_macvlan
+    
+    if ($LASTEXITCODE -eq 0) {
+        Write-Success "Red chat_macvlan creada exitosamente"
+        return $true
+    } else {
+        Write-Error "Error creando red macvlan, intentando con bridge..."
+        # Fallback a bridge network si macvlan falla
+        docker network create --driver bridge chat_macvlan 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            Write-Success "Red bridge chat_macvlan creada como fallback"
+            return $true
+        } else {
+            Write-Error "Error creando red"
+            return $false
+        }
+    }
+}
+
 function Setup-Environment {
     Write-Info "Configurando entorno de testing..."
+    
+    # Configurar red macvlan primero
+    if (-not (Setup-MacvlanNetwork)) {
+        Write-Error "Error configurando red macvlan"
+        return $false
+    }
     
     # Limpiar contenedores existentes
     Write-Info "Limpiando contenedores previos..."
@@ -61,7 +102,7 @@ function Start-Containers {
     
     foreach ($container in $containers) {
         Write-Info "Creando $($container.DisplayName)..."
-        docker run -dt --name $container.Name --privileged --cap-add NET_RAW --cap-add NET_ADMIN -e DISPLAY=host.docker.internal:0 link-chat bash
+        docker run -dt --name $container.Name --network chat_macvlan --privileged --cap-add NET_RAW --cap-add NET_ADMIN -e DISPLAY=host.docker.internal:0 link-chat bash
         
         if ($LASTEXITCODE -eq 0) {
             Write-Success "$($container.DisplayName) iniciado"
@@ -105,6 +146,17 @@ function Clean-Environment {
     docker stop test-chat test-chat-2 test-chat-3 2>$null
     docker rm test-chat test-chat-2 test-chat-3 2>$null
     docker rmi link-chat 2>$null
+    
+    # Limpiar red macvlan si existe
+    $networkExists = docker network ls --format "{{.Name}}" | Select-String -Pattern "^chat_macvlan$"
+    if ($networkExists) {
+        Write-Info "Eliminando red chat_macvlan..."
+        docker network rm chat_macvlan 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            Write-Success "Red chat_macvlan eliminada"
+        }
+    }
+    
     Write-Success "Entorno limpiado"
 }
 

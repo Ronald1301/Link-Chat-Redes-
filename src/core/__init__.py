@@ -1,1 +1,1 @@
-# Link-Chat 2.0 Core Module - Ethernet Protocol Implementation
+# Módulos core de Link-Chat 2.0# Link-Chat 2.0 Core Module - Ethernet Protocol Implementation

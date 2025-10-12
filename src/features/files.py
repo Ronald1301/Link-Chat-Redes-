@@ -17,8 +17,8 @@ class FileTransfer:
             nombre_archivo = os.path.basename(file_path)
             tamaño_archivo = os.path.getsize(file_path)
             
-            # Leer archivo en chunks
-            chunk_size = 1400  # Tamaño ajustado para dejar espacio para headers
+            # Leer archivo en chunks - reducido para soportar headers de fragmentación expandidos
+            chunk_size = 1300  # Reducido para soportar fragmentación de archivos muy grandes (1M+ chunks)
             chunks = []
             
             with open(file_path, 'rb') as f:
@@ -38,9 +38,13 @@ class FileTransfer:
             )
             self.chat_app.com.enviar_frame(frames_metadata)
             
-            # Enviar chunks
+            # Enviar chunks con formato binario seguro
             for i, chunk in enumerate(chunks):
-                chunk_data = f"FILE_CHUNK:{i}:{len(chunks)}:".encode('utf-8') + chunk
+                # Crear header de chunk con longitud fija
+                header = f"FILE_CHUNK:{i}:{len(chunks)}:".encode('utf-8')
+                header_length = len(header).to_bytes(2, 'big')  # 2 bytes para longitud del header
+                chunk_data = header_length + header + chunk
+                
                 frames_chunk = self.chat_app.com.crear_frame(
                     dest_mac,
                     Tipo_Mensaje.archivo.value,
@@ -93,7 +97,42 @@ class FileTransfer:
                             lambda: self.chat_app.mostrar_mensaje("Sistema", mensaje_seguro))
                     print(f"Metadata procesada: {nombre}, {total_chunks} chunks")
                 
-            elif mensaje.startswith("FILE_CHUNK:"):
+            elif isinstance(mensaje, bytes) and len(mensaje) >= 2:
+                # Nuevo formato binario seguro
+                try:
+                    header_length = int.from_bytes(mensaje[:2], 'big')
+                    if len(mensaje) >= 2 + header_length:
+                        header = mensaje[2:2+header_length].decode('utf-8')
+                        chunk_data = mensaje[2+header_length:]
+                        
+                        if header.startswith("FILE_CHUNK:"):
+                            parts = header.split(":")
+                            if len(parts) >= 3:
+                                chunk_num = int(parts[1])
+                                total_chunks = int(parts[2])
+                                
+                                if source_mac not in self.archivos_recibiendo:
+                                    print(f"Chunk {chunk_num} recibido sin metadata")
+                                    return
+                                
+                                archivo = self.archivos_recibiendo[source_mac]
+                                
+                                # Verificar que no sea un chunk duplicado
+                                if chunk_num not in archivo['chunks_recibidos']:
+                                    archivo['chunks_recibidos'].append(chunk_num)
+                                    archivo['datos'] += chunk_data
+                                    
+                                    # Mostrar progreso cada 10 chunks
+                                    if chunk_num % 10 == 0 or chunk_num == total_chunks - 1:
+                                        progreso = len(archivo['chunks_recibidos']) / total_chunks * 100
+                                        print(f"[{time.strftime('%H:%M:%S')}] Archivo {archivo['nombre']}: {progreso:.1f}% ({len(archivo['chunks_recibidos'])}/{total_chunks})")
+                                
+                except Exception as e:
+                    print(f"Error procesando chunk binario: {e}")
+                    return
+            
+            elif isinstance(mensaje, str) and mensaje.startswith("FILE_CHUNK:"):
+                # Formato legacy por compatibilidad
                 parts = mensaje.split(":", 3)
                 if len(parts) >= 4:
                     chunk_num = int(parts[1])
@@ -108,7 +147,7 @@ class FileTransfer:
                     
                     # Convertir chunk_data de string a bytes
                     if isinstance(chunk_data, str):
-                        chunk_data_bytes = chunk_data.encode('latin-1')
+                        chunk_data_bytes = chunk_data.encode('utf-8', errors='ignore')
                     else:
                         chunk_data_bytes = chunk_data
                     
@@ -120,8 +159,16 @@ class FileTransfer:
                         progreso = len(archivo['chunks_recibidos']) / archivo['total_chunks'] * 100
                         print(f"Progreso {archivo['nombre']}: {progreso:.1f}%")
                     
-            elif mensaje.startswith("FILE_END:"):
-                parts = mensaje.split(":")
+            elif (isinstance(mensaje, str) and mensaje.startswith("FILE_END:")) or \
+                 (isinstance(mensaje, bytes) and mensaje.startswith(b"FILE_END:")):
+                
+                # Manejar tanto string como bytes
+                if isinstance(mensaje, bytes):
+                    mensaje_str = mensaje.decode('utf-8', errors='ignore')
+                else:
+                    mensaje_str = mensaje
+                    
+                parts = mensaje_str.split(":")
                 if len(parts) >= 2:
                     nombre = parts[1]
                     
@@ -131,12 +178,21 @@ class FileTransfer:
                     
                     archivo = self.archivos_recibiendo[source_mac]
                     
-                    if len(archivo['chunks_recibidos']) == archivo['total_chunks']:
-                        # Guardar archivo - esto es lo que causa el problema después
+                    # Ordenar chunks recibidos para verificar continuidad
+                    chunks_ordenados = sorted(archivo['chunks_recibidos'])
+                    chunks_esperados = list(range(archivo['total_chunks']))
+                    chunks_faltantes = [c for c in chunks_esperados if c not in chunks_ordenados]
+                    
+                    if len(archivo['chunks_recibidos']) == archivo['total_chunks'] and not chunks_faltantes:
+                        print(f"[{time.strftime('%H:%M:%S')}] Archivo {nombre} completo. Guardando...")
                         self._guardar_archivo(archivo, source_mac)
                     else:
-                        error_msg = f"Archivo {nombre} incompleto. Recibidos: {len(archivo['chunks_recibidos'])}/{archivo['total_chunks']}"
-                        print(error_msg)
+                        if chunks_faltantes:
+                            error_msg = f"Archivo {nombre} incompleto. Faltan chunks: {chunks_faltantes[:10]}..." if len(chunks_faltantes) > 10 else f"Archivo {nombre} incompleto. Faltan chunks: {chunks_faltantes}"
+                        else:
+                            error_msg = f"Archivo {nombre} incompleto. Recibidos: {len(archivo['chunks_recibidos'])}/{archivo['total_chunks']}"
+                        
+                        print(f"[{time.strftime('%H:%M:%S')}] {error_msg}")
                         if hasattr(self.chat_app, 'root'):
                             self.chat_app.root.after(100, 
                                 lambda: self.chat_app.mostrar_mensaje("Error", error_msg))
@@ -151,8 +207,8 @@ class FileTransfer:
 
     def _guardar_archivo(self, archivo: dict, mac_origen: str):
         try:
-            # Crear directorio de descargas si no existe
-            download_dir = "descargas"
+            # Crear directorio de downloads si no existe
+            download_dir = "downloads"
             if not os.path.exists(download_dir):
                 os.makedirs(download_dir)
             

@@ -31,7 +31,9 @@ class Frame:
     id_mensaje: int = 0         # ID único del mensaje original
     fragmento: int = 0      # Número de fragmento actual
     total_fragmentos: int = 1   # Total de fragmentos del mensaje
-    nombre_archivo: str =""
+    nombre_archivo: str = ""
+    preamble: bytes = b"\x55\x55\x55\x55\x55\x55\x55\xd5"  # Preamble estándar Ethernet
+    crc: int = 0            # Campo para CRC
 
     def __init__(self, destino: str = "", origen: str = "", tipo_mensaje: Tipo_Mensaje = Tipo_Mensaje.texto, id: int = 0,
                  fragment_num: int = 0, total: int = 0, Datos: Union[bytes, str] = b""):
@@ -178,8 +180,9 @@ class Frame:
         if not (0 <= tipo_val <= 0xFFFF):
             raise ValueError(f"Tipo debe ser valor de 2 bytes (0-65535), tiene {tipo_val}")
 
-        # Para fragmentos, el tamaño máximo es menor porque agregamos headers
-        tamaño_maximo = 1500 - (8 if self.es_fragmento else 0)
+        # Para fragmentos, el tamaño máximo es menor porque agregamos headers más grandes
+        # Reducido para soportar fragmentación de archivos muy grandes (1M+ fragmentos)
+        tamaño_maximo = 1450 - (16 if self.es_fragmento else 0)
         if len(self.datos) > tamaño_maximo:
             raise ValueError(f"Datos máximo {tamaño_maximo} bytes, tiene {len(self.datos)}")
         
@@ -218,13 +221,16 @@ class Frame:
         # Si es fragmento, asegurar que los valores sean enteros y luego bytes
         if self.es_fragmento:
             id_mensaje_entero = self._asegurar_entero(self.id_mensaje)
-            num_fragmento_entero = self._asegurar_entero(self.num_fragmento)
+            num_fragmento_entero = self._asegurar_entero(self.fragmento)
             total_fragmentos_entero = self._asegurar_entero(self.total_fragmentos)
             
-            header_fragmento = struct.pack('>QHH', 
+            # Estructura expandida para soportar 1M+ fragmentos
+            # 4 bytes para cada campo = hasta 4 mil millones de fragmentos
+            header_fragmento = struct.pack('>IIII', 
                                          id_mensaje_entero, 
                                          num_fragmento_entero, 
-                                         total_fragmentos_entero)
+                                         total_fragmentos_entero,
+                                         0)  # Campo reservado para futuro uso
             datos_con_header = header_fragmento + self.datos
         else:
             datos_con_header = self.datos

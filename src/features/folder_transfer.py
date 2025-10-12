@@ -2,15 +2,15 @@
 """
 Módulo de Transferencia de Carpetas para Link-Chat
 Permite enviar y recibir carpetas completas con estructura de directorios
+MÉTODO: Envío recursivo de archivos individuales (sin ZIP)
 """
 
 import os
-import zipfile
-import tempfile
 import shutil
 from typing import List, Dict, Optional, Callable
 import time
 import json
+from pathlib import Path
 
 class FolderTransfer:
     def __init__(self, chat_app):
@@ -21,12 +21,17 @@ class FolderTransfer:
             chat_app: Instancia de la aplicación de chat
         """
         self.chat_app = chat_app
-        self.temp_dir = tempfile.gettempdir()
         self.carpetas_en_progreso: Dict[str, dict] = {}
+        self.transferencias_activas: Dict[str, dict] = {}  # Transfer ID -> metadata
+        
+        # Configurar directorio de recepción
+        self.receive_dir = "downloads"
+        if not os.path.exists(self.receive_dir):
+            os.makedirs(self.receive_dir)
         
     def send_folder(self, folder_path: str, dest_mac: str, progress_callback: Optional[Callable] = None) -> tuple:
         """
-        Envía una carpeta completa comprimida
+        Envía una carpeta completa usando transferencia recursiva de archivos
         
         Args:
             folder_path: Ruta de la carpeta a enviar
@@ -41,114 +46,160 @@ class FolderTransfer:
                 return False, "La carpeta no existe o no es válida"
             
             folder_name = os.path.basename(folder_path)
+            transfer_id = f"folder_{int(time.time())}_{hash(folder_path) % 10000}"
             
-            # Crear archivo ZIP temporal
-            zip_filename = f"{folder_name}_{int(time.time())}.zip"
-            zip_path = os.path.join(self.temp_dir, zip_filename)
+            # Escanear todos los archivos recursivamente
+            file_list = self._scan_folder_recursive(folder_path)
+            total_files = len(file_list)
             
-            # Comprimir carpeta
-            total_files = self._count_files(folder_path)
-            files_processed = 0
+            if total_files == 0:
+                return False, "No hay archivos para transferir en la carpeta"
             
-            with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-                for root, dirs, files in os.walk(folder_path):
-                    for file in files:
-                        file_path = os.path.join(root, file)
-                        arc_name = os.path.relpath(file_path, folder_path)
-                        zipf.write(file_path, arc_name)
-                        
-                        files_processed += 1
-                        if progress_callback:
-                            progress = (files_processed / total_files) * 50  # 50% para compresión
-                            progress_callback(progress, f"Comprimiendo: {file}")
-            
-            # Obtener información del archivo comprimido
-            zip_size = os.path.getsize(zip_path)
-            
-            # Enviar metadata de carpeta
+            # Enviar metadata de inicio de transferencia de carpeta
             folder_metadata = {
-                'type': 'FOLDER_METADATA',
-                'original_name': folder_name,
-                'zip_name': zip_filename,
+                'type': 'folder_start',
+                'name': folder_name,
+                'transfer_id': transfer_id,
                 'total_files': total_files,
-                'compressed_size': zip_size,
-                'timestamp': time.time()
+                'timestamp': int(time.time())
             }
             
-            metadata_msg = f"FOLDER_TRANSFER:{json.dumps(folder_metadata)}"
-            
-            # Enviar metadata
-            frames_metadata = self.chat_app.com.crear_frame(
+            metadata_json = json.dumps(folder_metadata)
+            metadata_frame = self.chat_app.frames.create_data_frame(
+                self.chat_app.interface,
                 dest_mac,
-                2,  # Tipo archivo
-                metadata_msg.encode('utf-8'),
-                zip_filename
+                f"FOLDER_START:{metadata_json}",
+                transfer_id
             )
-            self.chat_app.com.enviar_frame(frames_metadata)
+            
+            self.chat_app.frames.send_frame(metadata_frame)
+            
+            # Enviar cada archivo individualmente con su ruta relativa
+            files_sent = 0
+            for relative_path, full_path in file_list:
+                # Enviar información del archivo (ruta relativa)
+                file_info = {
+                    'type': 'folder_file',
+                    'transfer_id': transfer_id,
+                    'relative_path': relative_path,
+                    'file_size': os.path.getsize(full_path)
+                }
+                
+                file_info_json = json.dumps(file_info)
+                file_info_frame = self.chat_app.frames.create_data_frame(
+                    self.chat_app.interface,
+                    dest_mac,
+                    f"FOLDER_FILE:{file_info_json}",
+                    transfer_id
+                )
+                
+                self.chat_app.frames.send_frame(file_info_frame)
+                
+                # Enviar el archivo usando el sistema existente
+                success, message = self.chat_app.file_transfer.send_file(full_path, dest_mac)
+                
+                if not success:
+                    return False, f"Error enviando archivo {relative_path}: {message}"
+                
+                files_sent += 1
+                
+                if progress_callback:
+                    progress = (files_sent / total_files) * 100
+                    progress_callback(progress, f"Enviando: {relative_path}")
+            
+            # Enviar metadata de finalización
+            folder_end_metadata = {
+                'type': 'folder_end',
+                'transfer_id': transfer_id,
+                'files_sent': files_sent
+            }
+            
+            end_metadata_json = json.dumps(folder_end_metadata)
+            end_metadata_frame = self.chat_app.frames.create_data_frame(
+                self.chat_app.interface,
+                dest_mac,
+                f"FOLDER_END:{end_metadata_json}",
+                transfer_id
+            )
+            
+            self.chat_app.frames.send_frame(end_metadata_frame)
             
             if progress_callback:
-                progress_callback(60, "Enviando archivo comprimido...")
+                progress_callback(100, "Carpeta enviada exitosamente")
             
-            # Enviar el archivo ZIP usando FileTransfer existente
-            success, message = self.chat_app.file_transfer.send_file(zip_path, dest_mac)
-            
-            # Limpiar archivo temporal
-            try:
-                os.remove(zip_path)
-            except:
-                pass
-            
-            if success:
-                if progress_callback:
-                    progress_callback(100, "Carpeta enviada exitosamente")
-                return True, f"Carpeta '{folder_name}' enviada exitosamente"
-            else:
-                return False, f"Error enviando carpeta: {message}"
+            return True, f"Carpeta '{folder_name}' enviada exitosamente ({files_sent} archivos)"
                 
         except Exception as e:
             return False, f"Error procesando carpeta: {str(e)}"
     
-    def _count_files(self, folder_path: str) -> int:
-        """Cuenta el total de archivos en una carpeta"""
-        count = 0
-        for root, dirs, files in os.walk(folder_path):
-            count += len(files)
-        return count
-    
-    def receive_folder_metadata(self, mensaje: str, source_mac: str) -> bool:
+    def _scan_folder_recursive(self, folder_path: str) -> list:
         """
-        Procesa metadata de carpeta recibida
+        Escanea una carpeta recursivamente y retorna lista de archivos
         
         Args:
-            mensaje: Mensaje con metadata
+            folder_path: Ruta de la carpeta base
+            
+        Returns:
+            list: Lista de tuplas (ruta_relativa, ruta_completa)
+        """
+        file_list = []
+        for root, dirs, files in os.walk(folder_path):
+            for file in files:
+                full_path = os.path.join(root, file)
+                relative_path = os.path.relpath(full_path, folder_path)
+                file_list.append((relative_path, full_path))
+        return file_list
+    
+    def handle_folder_message(self, mensaje: str, source_mac: str) -> bool:
+        """
+        Procesa mensajes relacionados con transferencia de carpetas
+        
+        Args:
+            mensaje: Mensaje recibido
             source_mac: MAC del remitente
             
         Returns:
             bool: True si se procesó correctamente
         """
         try:
-            if not mensaje.startswith("FOLDER_TRANSFER:"):
-                return False
+            if mensaje.startswith("FOLDER_START:"):
+                return self._handle_folder_start(mensaje[13:], source_mac)
+            elif mensaje.startswith("FOLDER_FILE:"):
+                return self._handle_folder_file(mensaje[12:], source_mac)
+            elif mensaje.startswith("FOLDER_END:"):
+                return self._handle_folder_end(mensaje[11:], source_mac)
             
-            # Extraer metadata JSON
-            json_data = mensaje[16:]  # Quitar "FOLDER_TRANSFER:"
+            return False
+            
+        except Exception as e:
+            print(f"❌ Error procesando mensaje de carpeta: {e}")
+            return False
+    
+    def _handle_folder_start(self, json_data: str, source_mac: str) -> bool:
+        """Maneja el inicio de una transferencia de carpeta"""
+        try:
             metadata = json.loads(json_data)
+            transfer_id = metadata['transfer_id']
             
-            if metadata.get('type') != 'FOLDER_METADATA':
-                return False
+            # Crear directorio para la carpeta
+            folder_name = metadata['name']
+            folder_path = os.path.join(self.receive_dir, folder_name)
+            os.makedirs(folder_path, exist_ok=True)
             
-            # Almacenar información de la carpeta esperada
-            self.carpetas_en_progreso[source_mac] = {
-                'original_name': metadata['original_name'],
-                'zip_name': metadata['zip_name'],
+            # Almacenar información de la transferencia
+            self.carpetas_en_progreso[transfer_id] = {
+                'name': folder_name,
+                'path': folder_path,
                 'total_files': metadata['total_files'],
-                'compressed_size': metadata['compressed_size'],
+                'files_received': 0,
+                'files_info': {},
+                'status': 'receiving',
                 'timestamp': time.time(),
-                'status': 'waiting_zip'
+                'current_file_expected': None
             }
             
             # Notificar al usuario
-            mensaje_usuario = f"Recibiendo carpeta: {metadata['original_name']} ({metadata['total_files']} archivos)"
+            mensaje_usuario = f"📁 Recibiendo carpeta: {folder_name} ({metadata['total_files']} archivos)"
             if hasattr(self.chat_app, 'root'):
                 self.chat_app.root.after(100, 
                     lambda: self.chat_app.mostrar_mensaje("Sistema", mensaje_usuario))
@@ -156,7 +207,62 @@ class FolderTransfer:
             return True
             
         except Exception as e:
-            print(f"❌ Error procesando metadata de carpeta: {e}")
+            print(f"❌ Error iniciando recepción de carpeta: {e}")
+            return False
+    
+    def _handle_folder_file(self, json_data: str, source_mac: str) -> bool:
+        """Maneja información de archivo individual"""
+        try:
+            file_info = json.loads(json_data)
+            transfer_id = file_info['transfer_id']
+            
+            if transfer_id in self.carpetas_en_progreso:
+                folder_info = self.carpetas_en_progreso[transfer_id]
+                
+                # Establecer este como el archivo que estamos esperando recibir
+                folder_info['current_file_expected'] = {
+                    'relative_path': file_info['relative_path'],
+                    'size': file_info['file_size']
+                }
+                
+                # También almacenar en la lista general para referencia
+                if 'files_info' not in folder_info:
+                    folder_info['files_info'] = {}
+                
+                folder_info['files_info'][file_info['relative_path']] = {
+                    'relative_path': file_info['relative_path'],
+                    'size': file_info['file_size'],
+                    'received': False
+                }
+            
+            return True
+            
+        except Exception as e:
+            print(f"❌ Error procesando info de archivo: {e}")
+            return False
+    
+    def _handle_folder_end(self, json_data: str, source_mac: str) -> bool:
+        """Maneja el final de una transferencia de carpeta"""
+        try:
+            end_info = json.loads(json_data)
+            transfer_id = end_info['transfer_id']
+            
+            if transfer_id in self.carpetas_en_progreso:
+                folder_info = self.carpetas_en_progreso[transfer_id]
+                
+                # Notificar finalización
+                mensaje_usuario = f"✅ Carpeta '{folder_info['name']}' recibida completamente"
+                if hasattr(self.chat_app, 'root'):
+                    self.chat_app.root.after(100, 
+                        lambda: self.chat_app.mostrar_mensaje("Sistema", mensaje_usuario))
+                
+                # Limpiar información temporal
+                del self.carpetas_en_progreso[transfer_id]
+            
+            return True
+            
+        except Exception as e:
+            print(f"❌ Error finalizando recepción de carpeta: {e}")
             return False
     
     def check_folder_file_received(self, file_path: str, source_mac: str) -> bool:
@@ -171,21 +277,16 @@ class FolderTransfer:
             bool: True si se procesó como carpeta
         """
         try:
-            if source_mac not in self.carpetas_en_progreso:
-                return False
-            
-            folder_info = self.carpetas_en_progreso[source_mac]
-            file_name = os.path.basename(file_path)
-            
-            # Verificar si es el archivo ZIP esperado
-            if file_name == folder_info['zip_name'] and file_path.endswith('.zip'):
-                # Extraer la carpeta
-                success = self._extract_folder(file_path, folder_info, source_mac)
-                
-                # Limpiar información temporal
-                del self.carpetas_en_progreso[source_mac]
-                
-                return success
+            # Buscar transferencias activas que estén esperando archivos
+            for transfer_id, folder_info in self.carpetas_en_progreso.items():
+                if folder_info.get('status') == 'receiving' and folder_info.get('current_file_expected'):
+                    # Verificar si este es el archivo que estamos esperando
+                    expected_info = folder_info['current_file_expected']
+                    file_size = os.path.getsize(file_path)
+                    
+                    # Si el tamaño coincide, probablemente es nuestro archivo
+                    if file_size == expected_info['size']:
+                        return self._process_folder_file(file_path, transfer_id, folder_info, expected_info)
             
             return False
             
@@ -193,61 +294,43 @@ class FolderTransfer:
             print(f"❌ Error verificando archivo de carpeta: {e}")
             return False
     
-    def _extract_folder(self, zip_path: str, folder_info: dict, source_mac: str) -> bool:
+    def _process_folder_file(self, file_path: str, transfer_id: str, folder_info: dict, expected_info: dict) -> bool:
         """
-        Extrae el contenido de la carpeta recibida
-        
-        Args:
-            zip_path: Ruta del archivo ZIP
-            folder_info: Información de la carpeta
-            source_mac: MAC del remitente
-            
-        Returns:
-            bool: True si se extrajo correctamente
+        Procesa un archivo individual de una transferencia de carpeta
         """
         try:
-            # Crear directorio de destino
-            downloads_dir = "descargas"
-            folder_name = folder_info['original_name']
-            extract_path = os.path.join(downloads_dir, folder_name)
+            relative_path = expected_info['relative_path']
             
-            # Si la carpeta ya existe, agregar un número
-            contador = 1
-            original_extract_path = extract_path
-            while os.path.exists(extract_path):
-                extract_path = f"{original_extract_path}_{contador}"
-                contador += 1
+            # Crear directorio destino si es necesario
+            dest_file_path = os.path.join(folder_info['path'], relative_path)
+            dest_dir = os.path.dirname(dest_file_path)
+            os.makedirs(dest_dir, exist_ok=True)
             
-            # Crear directorio
-            os.makedirs(extract_path, exist_ok=True)
+            # Mover el archivo a su ubicación final
+            shutil.move(file_path, dest_file_path)
             
-            # Extraer contenido
-            with zipfile.ZipFile(zip_path, 'r') as zipf:
-                zipf.extractall(extract_path)
+            # Marcar archivo como recibido
+            if relative_path in folder_info['files_info']:
+                folder_info['files_info'][relative_path]['received'] = True
             
-            # Eliminar archivo ZIP temporal
-            try:
-                os.remove(zip_path)
-            except:
-                pass
+            # Limpiar archivo esperado
+            folder_info['current_file_expected'] = None
             
-            # Notificar éxito
-            extracted_files = self._count_files(extract_path)
-            mensaje = f"Carpeta extraída: {folder_name} ({extracted_files} archivos) en {os.path.basename(extract_path)}"
+            # Actualizar contador
+            folder_info['files_received'] += 1
+            
+            # Notificar progreso
+            progress = (folder_info['files_received'] / folder_info['total_files']) * 100
+            mensaje_progreso = f"📁 {folder_info['name']}: {folder_info['files_received']}/{folder_info['total_files']} archivos ({progress:.1f}%)"
             
             if hasattr(self.chat_app, 'root'):
-                self.chat_app.root.after(100,
-                    lambda: self.chat_app.mostrar_mensaje("Sistema", mensaje))
+                self.chat_app.root.after(100, 
+                    lambda: self.chat_app.mostrar_mensaje("Sistema", mensaje_progreso))
             
-            print(f"✅ Carpeta extraída exitosamente: {extract_path}")
             return True
             
         except Exception as e:
-            error_msg = f"Error extrayendo carpeta: {str(e)}"
-            if hasattr(self.chat_app, 'root'):
-                self.chat_app.root.after(100,
-                    lambda: self.chat_app.mostrar_mensaje("Error", error_msg))
-            print(f"❌ {error_msg}")
+            print(f"❌ Error procesando archivo de carpeta: {e}")
             return False
     
     def get_folder_size(self, folder_path: str) -> tuple:
@@ -281,18 +364,17 @@ class FolderTransfer:
         """Limpia archivos temporales antiguos"""
         try:
             current_time = time.time()
-            temp_pattern = os.path.join(self.temp_dir, "*.zip")
             
-            import glob
-            for temp_file in glob.glob(temp_pattern):
-                try:
-                    file_time = os.path.getmtime(temp_file)
-                    # Eliminar archivos temporales más antiguos de 1 hora
-                    if current_time - file_time > 3600:
-                        os.remove(temp_file)
-                        print(f"🗑️ Archivo temporal eliminado: {temp_file}")
-                except:
-                    pass
+            # Limpiar transferencias de carpetas antigas (más de 1 hora)
+            expired_transfers = []
+            for transfer_id, folder_info in self.carpetas_en_progreso.items():
+                if 'timestamp' in folder_info:
+                    if current_time - folder_info['timestamp'] > 3600:
+                        expired_transfers.append(transfer_id)
+            
+            for transfer_id in expired_transfers:
+                del self.carpetas_en_progreso[transfer_id]
+                print(f"🗑️ Transferencia de carpeta expirada eliminada: {transfer_id}")
                     
         except Exception as e:
             print(f"❌ Error limpiando archivos temporales: {e}")

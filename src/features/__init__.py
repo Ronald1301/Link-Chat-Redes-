@@ -1,1 +1,1 @@
-# Link-Chat 2.0 Features Module - Advanced Functionality
+# Funcionalidades avanzadas de Link-Chat 2.0# Link-Chat 2.0 Features Module - Advanced Functionality

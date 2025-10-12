@@ -1,1 +1,1 @@
-# Link-Chat 2.0 Source Package
+"""Link-Chat 2.0 - Comunicación por Ethernet Raw Sockets"""

@@ -1,8 +1,8 @@
-# 🚀 Guía de Testing Docker - Link-Chat 2.0
+# 🚀 Guía de Testing Docker - Link-Chat 3.0
 
 ## 📋 Guía Completa para Probar Link-Chat en Docker
 
-Esta guía te permite probar Link-Chat 2.0 en contenedores Docker de forma simple y rápida.
+Esta guía te permite probar Link-Chat 3.0 en contenedores Docker de forma simple y rápida.
 
 ---
 
@@ -228,7 +228,7 @@ Si todos los pasos funcionan correctamente:
 - **Protocolo Ethernet:** ✅ Implementado correctamente
 - **Arquitectura modular:** ✅ Organizada
 
-**¡Tu Link-Chat 2.0 está listo para presentación y evaluación!** 🚀
+**¡Tu Link-Chat 3.0 está listo para presentación y evaluación!** 🚀
 
 ---
 
