@@ -11,6 +11,7 @@ from typing import List, Dict, Optional, Callable
 import time
 import json
 from pathlib import Path
+from ..core.frames import Tipo_Mensaje
 
 class FolderTransfer:
     def __init__(self, chat_app):
@@ -65,14 +66,13 @@ class FolderTransfer:
             }
             
             metadata_json = json.dumps(folder_metadata)
-            metadata_frame = self.chat_app.frames.create_data_frame(
-                self.chat_app.interface,
+            metadata_frames = self.chat_app.com.crear_frame(
                 dest_mac,
-                f"FOLDER_START:{metadata_json}",
-                transfer_id
+                Tipo_Mensaje.texto.value,
+                f"FOLDER_START:{metadata_json}"
             )
             
-            self.chat_app.frames.send_frame(metadata_frame)
+            self.chat_app.com.enviar_frame(metadata_frames)
             
             # Enviar cada archivo individualmente con su ruta relativa
             files_sent = 0
@@ -86,14 +86,13 @@ class FolderTransfer:
                 }
                 
                 file_info_json = json.dumps(file_info)
-                file_info_frame = self.chat_app.frames.create_data_frame(
-                    self.chat_app.interface,
+                file_info_frames = self.chat_app.com.crear_frame(
                     dest_mac,
-                    f"FOLDER_FILE:{file_info_json}",
-                    transfer_id
+                    Tipo_Mensaje.texto.value,
+                    f"FOLDER_FILE:{file_info_json}"
                 )
                 
-                self.chat_app.frames.send_frame(file_info_frame)
+                self.chat_app.com.enviar_frame(file_info_frames)
                 
                 # Enviar el archivo usando el sistema existente
                 success, message = self.chat_app.file_transfer.send_file(full_path, dest_mac)
@@ -115,14 +114,13 @@ class FolderTransfer:
             }
             
             end_metadata_json = json.dumps(folder_end_metadata)
-            end_metadata_frame = self.chat_app.frames.create_data_frame(
-                self.chat_app.interface,
+            end_metadata_frames = self.chat_app.com.crear_frame(
                 dest_mac,
-                f"FOLDER_END:{end_metadata_json}",
-                transfer_id
+                Tipo_Mensaje.texto.value,
+                f"FOLDER_END:{end_metadata_json}"
             )
             
-            self.chat_app.frames.send_frame(end_metadata_frame)
+            self.chat_app.com.enviar_frame(end_metadata_frames)
             
             if progress_callback:
                 progress_callback(100, "Carpeta enviada exitosamente")

@@ -517,7 +517,12 @@ class ChatMinimalTkinter:
             
             # Procesar según el tipo de datos - pasar datos raw al file_transfer
             if isinstance(datos_raw, bytes) and len(datos_raw) >= 2:
-                # Intentar nuevo formato binario primero
+                # Verificar formato FILE_TRANSFER: nuevo
+                if datos_raw.startswith(b"FILE_TRANSFER:"):
+                    self.file_transfer.receive_file(datos_raw, frame.mac_origen)
+                    return
+                
+                # Intentar formato binario legacy
                 try:
                     header_length = int.from_bytes(datos_raw[:2], 'big')
                     if len(datos_raw) >= 2 + header_length:
@@ -539,8 +544,9 @@ class ChatMinimalTkinter:
                     # Procesar mensajes de transferencia de carpeta
                     if self.folder_transfer:
                         self.folder_transfer.handle_folder_message(mensaje, frame.mac_origen)
-                elif mensaje.startswith(('FILE_METADATA:', 'FILE_CHUNK:', 'FILE_END:')):
-                    self.file_transfer.receive_file(mensaje, frame.mac_origen)
+                elif mensaje.startswith(('FILE_METADATA:', 'FILE_CHUNK:', 'FILE_END:', 'FILE_TRANSFER:')):
+                    # Procesar archivos (legacy y nuevo formato)
+                    self.file_transfer.receive_file(datos_raw, frame.mac_origen)
                 else:
                     # Archivo no fragmentado - guardar directamente
                     self._guardar_archivo_no_fragmentado(frame)

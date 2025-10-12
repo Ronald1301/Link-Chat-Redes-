@@ -158,14 +158,14 @@ class Frame:
         """Asegura que todos los campos numéricos sean enteros"""
         self.crc = int(self.crc) if self.crc is not None else 0
         self.id_mensaje = int(self.id_mensaje) if self.id_mensaje is not None else 0
-        self.num_fragmento = int(self.num_fragmento) if self.num_fragmento is not None else 0
+        self.fragmento = int(self.fragmento) if self.fragmento is not None else 0
         self.total_fragmentos = int(self.total_fragmentos) if self.total_fragmentos is not None else 1
 
     def validar_campos(self):
         # Usar valores convertidos a enteros para validación
         tipo_val = self._asegurar_entero(self.tipo)
         crc_val = self._asegurar_entero(self.crc)
-        num_frag_val = self._asegurar_entero(self.num_fragmento)
+        num_frag_val = self._asegurar_entero(self.fragmento)
         total_frags_val = self._asegurar_entero(self.total_fragmentos)
 
         # Validaciones existentes...

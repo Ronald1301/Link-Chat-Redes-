@@ -167,7 +167,7 @@ class Envio_recibo_frames:
             mensaj_bytes = mensaje_bytes
 
         # Calcular longitud
-        longitud = len(mensaje_bytes)
+        longitud = len(mensaj_bytes)
         id_mensaje = int(time.time() * 1000) % 65536
         offset = 0
         el_origen = self.mac_ori 
@@ -183,7 +183,7 @@ class Envio_recibo_frames:
                 id= id_mensaje,
                 fragment_num= 0,
                 total= 0,
-                Datos= mensaje_bytes
+                Datos= mensaj_bytes
             )
         
             print(f"📦 Frame creado:")
@@ -246,25 +246,13 @@ class Envio_recibo_frames:
         
         print(f"✅ Frame aceptado: es para nosotros")
 
-        if frame.total_fragmentos == 0 and frame.fragmento == 0:
-                return self.process_complete_frame(frame)
-        
-
-         # Verificar si es un fragmento
-        
-
-        if frame.tipo_mensaje == Tipo_Mensaje.archivo:
-            # Para archivos, procesar directamente
+        # Verificar si es un fragmento (aplicable tanto a archivos como texto)
+        if frame.total_fragmentos > 1:
+            print(f"🔧 Frame fragmentado detectado: {frame.fragmento+1}/{frame.total_fragmentos}")
+            return self._procesar_fragmento(frame)
+        else:
+            # Frame completo (no fragmentado)
             return self.process_complete_frame(frame)
-        elif frame.tipo_mensaje == Tipo_Mensaje.texto:
-            # Para texto, verificar si está fragmentado
-            if frame.total_fragmentos > 1:
-                print(f"🔧 Frame fragmentado detectado: {frame.fragmento}/{frame.total_fragmentos}")
-                return self._procesar_fragmento(frame)
-            
-            if frame.total_fragmentos == 0 and frame.fragmento == 0:
-                return self.process_complete_frame(frame)
-        return None
         
     def process_complete_frame(self, frame: Frame) -> Frame:
         """Procesa un frame que ya está completo (no fragmentado)"""
@@ -275,24 +263,38 @@ class Envio_recibo_frames:
                 print("Error decodificando payload de texto")
         elif frame.tipo_mensaje == Tipo_Mensaje.archivo:
             try:
-                print(f"🔧 Procesando frame de archivo: {frame}")
-                print(f"📊 Datos recibidos: {frame.datos[:100] if frame.datos else 'VACIO'}")
+                print(f"🔧 Procesando frame de archivo")
+                print(f"📊 Datos recibidos: {len(frame.datos)} bytes")
                 
-                # Si los datos están vacíos pero nombre_archivo tiene contenido,
-                # puede que la estructura del frame sea diferente
+                # Verificar si es el nuevo formato FILE_TRANSFER
+                if frame.datos:
+                    try:
+                        if isinstance(frame.datos, bytes):
+                            datos_str = frame.datos.decode('utf-8', errors='ignore')
+                        else:
+                            datos_str = str(frame.datos)
+                        
+                        # Nuevo formato unificado
+                        if datos_str.startswith("FILE_TRANSFER:"):
+                            print("✅ Archivo con formato unificado detectado")
+                            return frame
+                    except:
+                        pass
+                
+                # Si los datos están vacíos pero nombre_archivo tiene contenido (sistema legacy)
                 if not frame.datos and hasattr(frame, 'nombre_archivo') and frame.nombre_archivo:
                     print("⚠️  Datos vacíos, usando nombre_archivo como datos")
-                    # En este caso, el "nombre_archivo" podría contener los datos reales
-                    # o metadata. Necesitamos ver el formato exacto.
                     
-                    # Si el nombre_archivo contiene metadata FILE_, procesarlo como archivo fragmentado
+                    # Si el nombre_archivo contiene metadata FILE_, procesarlo como archivo fragmentado legacy
                     if frame.nombre_archivo.startswith(('FILE_METADATA:', 'FILE_CHUNK:', 'FILE_END:')):
+                        # Para compatibilidad legacy, mover el contenido a datos
+                        frame.datos = frame.nombre_archivo
                         return frame
                 
-                # Procesamiento normal para archivos no fragmentados
+                # Procesamiento para formato legacy con estructura [largo][nombre][datos]
                 if frame.datos and len(frame.datos) >= 2:
                     try:
-                        # Intentar extraer nombre y datos según el formato esperado
+                        # Intentar extraer nombre y datos según el formato legacy
                         largo_nombre = int.from_bytes(frame.datos[0:2], 'big')
                         if len(frame.datos) >= 2 + largo_nombre:
                             nombre_archivo = frame.datos[2:2+largo_nombre].decode('utf-8')
@@ -301,10 +303,10 @@ class Envio_recibo_frames:
                             frame.nombre_archivo = nombre_archivo
                             frame.datos = datos_archivo
                             
-                            print(f"✅ Archivo procesado: {nombre_archivo}, {len(datos_archivo)} bytes")
+                            print(f"✅ Archivo legacy procesado: {nombre_archivo}, {len(datos_archivo)} bytes")
                             return frame
                     except Exception as e:
-                        print(f"❌ Error procesando estructura de archivo: {e}")
+                        print(f"❌ Error procesando estructura legacy: {e}")
                 
                 # Si llegamos aquí, mantener el frame como está
                 return frame
@@ -386,7 +388,7 @@ class Envio_recibo_frames:
             # Es un fragmento de un mensaje más grande
             mensaje_completo = self.fragment_manager.agregar_fragmento(
                 frame.id_mensaje, 
-                frame.num_fragmento, 
+                frame.fragmento, 
                 frame.total_fragmentos,
                 frame.datos,
                 frame.mac_origen
@@ -407,7 +409,7 @@ class Envio_recibo_frames:
             else:
                 # Aún faltan fragmentos
                 estado = self.fragment_manager.obtener_estado_ensamblaje()
-                print(f"📦 Fragmento {frame.num_fragmento+1}/{frame.total_fragmentos} recibido (pendientes: {estado['mensajes_pendientes']})")
+                print(f"📦 Fragmento {frame.fragmento+1}/{frame.total_fragmentos} recibido (pendientes: {estado['mensajes_pendientes']})")
         
         else:
             # Mensaje normal (no fragmentado)
