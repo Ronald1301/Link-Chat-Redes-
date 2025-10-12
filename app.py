@@ -6,13 +6,16 @@ import time
 import sys
 import os
 import json
-from frames import Tipo_Mensaje
-from env_recb import Envio_recibo_frames
-from files import FileTransfer
-from mac import Mac 
+from src.core.frames import Tipo_Mensaje
+from src.core.env_recb import Envio_recibo_frames
+from src.features.files import FileTransfer
+from src.core.mac import Mac
+from src.features.discovery import DiscoveryManager
+from src.features.folder_transfer import FolderTransfer
+from src.features.simple_security import SimpleSecurityManager 
 
-if not os.path.exists("descargas"):
-    os.makedirs("descargas")
+if not os.path.exists("downloads"):
+    os.makedirs("downloads")
 
 # Configuración para VirtualBox - evitar problemas gráficos
 os.environ['TK_SILENCE_DEPRECATION'] = '1'
@@ -72,9 +75,15 @@ class ChatMinimalTkinter:
         self.archivo_contactos = "contactos_minimal.json"
         self.file_transfer = FileTransfer(self)
         self.archivo_seleccionado = None
+        self.carpeta_seleccionada = None
         self.interfaz_seleccionada = None
         self.dic_usuarios = {"todos": "ff:ff:ff:ff:ff:ff"}
         self.stop_event = None
+        
+        # Nuevas funcionalidades
+        self.discovery_manager = None
+        self.folder_transfer = None
+        self.security_manager = None
 
 
         self.contador_mensajes = 0  # INICIALIZAR contador_mensajes
@@ -206,13 +215,17 @@ class ChatMinimalTkinter:
         )
         self.btn_enviar.pack(side=tk.LEFT, padx=2)
         
-        # === SECCIÓN DE ARCHIVOS SIMPLIFICADA ===
+        # === SECCIÓN DE ARCHIVOS Y CARPETAS AMPLIADA ===
         file_frame = tk.Frame(main_frame, bg=self.bg_color, highlightbackground=self.border_color, highlightthickness=1)
         file_frame.pack(fill=tk.X, pady=2)
         
-        # Botón para seleccionar archivo (sin emojis ni colores)
+        # Primera fila: Archivos
+        file_row1 = tk.Frame(file_frame, bg=self.bg_color)
+        file_row1.pack(fill=tk.X, pady=1)
+        
+        # Botón para seleccionar archivo
         self.btn_seleccionar = tk.Button(
-            file_frame, 
+            file_row1, 
             text="Seleccionar Archivo",
             command=self.seleccionar_archivo,
             width=15,
@@ -224,19 +237,37 @@ class ChatMinimalTkinter:
         )
         self.btn_seleccionar.pack(side=tk.LEFT, padx=2)
         
-        # Etiqueta del archivo seleccionado
+        # Botón para seleccionar carpeta
+        self.btn_seleccionar_carpeta = tk.Button(
+            file_row1, 
+            text="Seleccionar Carpeta",
+            command=self.seleccionar_carpeta,
+            width=15,
+            bg=self.button_bg,
+            fg=self.fg_color,
+            font=('Arial', self.font_size),
+            relief="solid",
+            bd=1
+        )
+        self.btn_seleccionar_carpeta.pack(side=tk.LEFT, padx=2)
+        
+        # Etiqueta del elemento seleccionado
         self.lbl_archivo = tk.Label(
-            file_frame, 
-            text="Ningun archivo", 
+            file_row1, 
+            text="Ningun elemento seleccionado", 
             bg=self.bg_color, 
             fg=self.fg_color,
             font=('Arial', self.font_size)
         )
         self.lbl_archivo.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
         
-        # Botón para enviar archivo (sin emojis ni colores)
+        # Segunda fila: Botones de envío
+        file_row2 = tk.Frame(file_frame, bg=self.bg_color)
+        file_row2.pack(fill=tk.X, pady=1)
+        
+        # Botón para enviar archivo
         self.btn_enviar_archivo = tk.Button(
-            file_frame, 
+            file_row2, 
             text="Enviar Archivo",
             command=self.enviar_archivo,
             state=tk.DISABLED,
@@ -247,7 +278,22 @@ class ChatMinimalTkinter:
             relief="solid",
             bd=1
         )
-        self.btn_enviar_archivo.pack(side=tk.RIGHT, padx=2)
+        self.btn_enviar_archivo.pack(side=tk.LEFT, padx=2)
+        
+        # Botón para enviar carpeta
+        self.btn_enviar_carpeta = tk.Button(
+            file_row2, 
+            text="Enviar Carpeta",
+            command=self.enviar_carpeta,
+            state=tk.DISABLED,
+            width=15,
+            bg=self.button_bg,
+            fg=self.fg_color,
+            font=('Arial', self.font_size),
+            relief="solid",
+            bd=1
+        )
+        self.btn_enviar_carpeta.pack(side=tk.LEFT, padx=2)
         
         # Controles simples
         control_frame = tk.Frame(main_frame, bg=self.bg_color, highlightbackground=self.border_color, highlightthickness=1)
@@ -283,10 +329,55 @@ class ChatMinimalTkinter:
         )
         self.btn_agregar_contacto.pack(side=tk.LEFT, padx=2)
 
+        # === SECCIÓN DE SEGURIDAD Y UTILIDADES ===
+        security_frame = tk.Frame(main_frame, bg=self.bg_color, highlightbackground=self.border_color, highlightthickness=1)
+        security_frame.pack(fill=tk.X, pady=2)
+        
+        # Botones de seguridad
+        self.btn_habilitar_seguridad = tk.Button(
+            security_frame, 
+            text="Habilitar Seguridad",
+            command=self.toggle_security,
+            width=15,
+            bg=self.button_bg,
+            fg=self.fg_color,
+            font=('Arial', self.font_size),
+            relief="solid",
+            bd=1,
+            state=tk.DISABLED
+        )
+        self.btn_habilitar_seguridad.pack(side=tk.LEFT, padx=2)
+        
+        # Botón para iniciar discovery
+        self.btn_buscar_dispositivos = tk.Button(
+            security_frame, 
+            text="Buscar Dispositivos",
+            command=self.buscar_dispositivos,
+            width=15,
+            bg=self.button_bg,
+            fg=self.fg_color,
+            font=('Arial', self.font_size),
+            relief="solid",
+            bd=1,
+            state=tk.DISABLED
+        )
+        self.btn_buscar_dispositivos.pack(side=tk.LEFT, padx=2)
+        
+        # Estado de seguridad
+        self.lbl_seguridad = tk.Label(
+            security_frame, 
+            text="Seguridad: Deshabilitada", 
+            bg=self.bg_color, 
+            fg='red',
+            font=('Arial', self.font_size)
+        )
+        self.lbl_seguridad.pack(side=tk.LEFT, padx=10)
+
         btn_frame = tk.Frame(main_frame, bg=self.bg_color, highlightbackground=self.border_color, highlightthickness=1)
         btn_frame.pack(fill=tk.X, pady=5)
 
         tk.Button(btn_frame, text="Limpiar", command=self.limpiar_mensajes, width=8, bg=self.button_bg, fg=self.fg_color, font=('Arial', self.font_size), relief="solid", bd=1).pack(side=tk.LEFT, padx=2)
+        tk.Button(btn_frame, text="Estadísticas", command=self.mostrar_estadisticas, width=10, bg=self.button_bg, fg=self.fg_color, font=('Arial', self.font_size), relief="solid", bd=1).pack(side=tk.LEFT, padx=2)
         tk.Button(btn_frame, text="Salir", command=self.salir, width=8, bg=self.button_bg, fg=self.fg_color, font=('Arial', self.font_size), relief="solid", bd=1).pack(side=tk.LEFT, padx=2)
         
         # Bind selección de destino
@@ -337,7 +428,10 @@ class ChatMinimalTkinter:
     def habilitar_controles_chat(self):
         """Habilita todos los controles una vez conectado"""
         self.btn_seleccionar.config(state=tk.NORMAL)
+        self.btn_seleccionar_carpeta.config(state=tk.NORMAL)
         self.btn_agregar_contacto.config(state=tk.NORMAL)
+        self.btn_habilitar_seguridad.config(state=tk.NORMAL)
+        self.btn_buscar_dispositivos.config(state=tk.NORMAL)
         self.mensaje_entry.config(state=tk.NORMAL)
         self.btn_enviar.config(state=tk.NORMAL)
 
@@ -350,9 +444,16 @@ class ChatMinimalTkinter:
         if file_path:
             self.archivo_seleccionado = file_path
             nombre_archivo = os.path.basename(file_path)
+            tamaño_archivo = os.path.getsize(file_path)
+            tamaño_mb = tamaño_archivo / (1024 * 1024)
             
-            self.lbl_archivo.config(text=nombre_archivo)
+            texto = f"Archivo: {nombre_archivo} ({tamaño_mb:.1f} MB)"
+            self.lbl_archivo.config(text=texto)
             self.btn_enviar_archivo.config(state=tk.NORMAL)
+            
+            # Deshabilitar envío de carpeta
+            self.btn_enviar_carpeta.config(state=tk.DISABLED)
+            self.carpeta_seleccionada = None
             
             self.mostrar_mensaje("Sistema", f"Archivo seleccionado: {nombre_archivo}")
     
@@ -411,7 +512,11 @@ class ChatMinimalTkinter:
             print(f"   - Mensaje decodificado: {mensaje[:100]}...")
             
             # Procesar según el tipo de mensaje de archivo
-            if mensaje.startswith('FILE_METADATA:'):
+            if mensaje.startswith('FOLDER_TRANSFER:'):
+                # Procesar metadata de carpeta
+                if self.folder_transfer:
+                    self.folder_transfer.receive_folder_metadata(mensaje, frame.mac_origen)
+            elif mensaje.startswith('FILE_METADATA:'):
                 self.file_transfer.receive_file(mensaje, frame.mac_origen)
             elif mensaje.startswith('FILE_CHUNK:'):
                 self.file_transfer.receive_file(mensaje, frame.mac_origen)
@@ -485,7 +590,7 @@ class ChatMinimalTkinter:
             
             # Limpiar selección
             self.archivo_seleccionado = None
-            self.lbl_archivo.config(text="Ningun archivo")
+            self.lbl_archivo.config(text="Ningun elemento seleccionado")
         else:
             self.btn_enviar_archivo.config(state=tk.NORMAL)
             self.mostrar_mensaje("Error", f"Fallo en envio: {mensaje}")
@@ -541,10 +646,21 @@ class ChatMinimalTkinter:
         self.stop_event = threading.Event()
         self.com = Envio_recibo_frames(interfaz=self.interfaz_seleccionada)
         mac_propia = self.com.mac_ori
+        
+        # Inicializar nuevos módulos
+        self.discovery_manager = DiscoveryManager(
+            self.com, 
+            callback_device_found=self.on_device_discovered
+        )
+        self.folder_transfer = FolderTransfer(self)
+        self.security_manager = SimpleSecurityManager(self)
                 
         self.habilitar_controles_chat()
         self.actualizar_estado(f"Conectado - {self.interfaz_seleccionada} - MAC: {mac_propia}")
         self.mostrar_mensaje("Sistema", f"Conectado - Interfaz: {self.interfaz_seleccionada} - Mi MAC: {mac_propia}")
+        
+        # Iniciar discovery automático
+        self.discovery_manager.start_discovery()
         
         self.actualizar_destino()
         self.receive_thread = threading.Thread(
@@ -588,7 +704,7 @@ class ChatMinimalTkinter:
         if mac_origen not in self.contactos:
             self.contactos[mac_origen] = f"Dispositivo {mac_origen[-6:]}"
             self.guardar_contactos()
-            self.root.after(0, self.actualizar_lista_destinos)
+            self.root.after(0, self.actualizar_destinos)
         
         # Mostrar mensaje
         if isinstance(mensaje, bytes):
@@ -603,16 +719,8 @@ class ChatMinimalTkinter:
             self.root.after(0, lambda: self.mostrar_mensaje(mac_origen, mensaje))
         
         # Procesar mensajes de archivo
-        if mensaje.startswith(("FILE_METADATA:", "FILE_CHUNK:", "FILE_END:")):
+        if isinstance(mensaje, str) and mensaje.startswith(("FILE_METADATA:", "FILE_CHUNK:", "FILE_END:")):
             self.root.after(0, lambda: self.file_transfer.receive_file(mensaje, mac_origen))
-        else:
-            # Agregar a contactos si es nuevo
-            if mac_origen not in self.contactos:
-                self.contactos[mac_origen] = f"Dispositivo {mac_origen[-6:]}"
-                self.guardar_contactos()
-                self.root.after(0, self.actualizar_destinos)
-            
-            self.root.after(0, lambda: self.mostrar_mensaje(mac_origen, mensaje))
     
     def enviar_mensaje(self, event=None):
         """Envía mensaje de texto"""
@@ -624,21 +732,29 @@ class ChatMinimalTkinter:
         mensaje = self.mensaje_entry.get('1.0', tk.END).strip()
         if not mensaje:
             return
-        list = None
-        self.mostrar_mensaje("Yo",  f"→ {mensaje}")
-        list = self.com.crear_frame(self.destino_actual, Tipo_Mensaje.texto, mensaje)
-        self.mensaje_var.set("")
+        
+        # Verificar si se debe cifrar el mensaje
+        mensaje_final = mensaje
+        if (self.security_manager and 
+            self.security_manager.has_secure_channel(self.destino_actual) and
+            self.destino_actual != "FF:FF:FF:FF:FF:FF"):  # No cifrar broadcast
+            
+            encrypted_msg = self.security_manager.encrypt_message(mensaje, self.destino_actual)
+            if encrypted_msg:
+                mensaje_final = encrypted_msg
+                self.mostrar_mensaje("Yo 🔒", f"→ {mensaje}")  # Mostrar mensaje original
+            else:
+                self.mostrar_mensaje("Yo", f"→ {mensaje}")
+        else:
+            self.mostrar_mensaje("Yo", f"→ {mensaje}")
+        
+        # Crear y enviar frame
+        frames = self.com.crear_frame(self.destino_actual, Tipo_Mensaje.texto, mensaje_final)
+        
+        if frames:
+            self.com.enviar_frame(frames)
 
-        if list:
-            self.com.enviar_frame(list)
-
-        self.mensaje_entry.delete('1.0', tk.END)       
-        # # Enviar en hilo separado
-        # threading.Thread(
-        #     target=self._enviar_mensaje_thread,
-        #     args=(mensaje, self.destino_actual),
-        #     daemon=True
-        # ).start()
+        self.mensaje_entry.delete('1.0', tk.END)
     
     def _enviar_mensaje_thread(self, mensaje, destino):
         """Envía mensaje en hilo separado"""
@@ -681,14 +797,8 @@ class ChatMinimalTkinter:
                         except:
                             mensaje = str(mensaje)
                     
-                    # Mostrar el mensaje
-                    self.mostrar_mensaje(decoded_frame.mac_origen, mensaje)
-                    
-                    # Actualizar contactos si es nuevo
-                    if decoded_frame.mac_origen not in self.contactos:
-                        self.contactos[decoded_frame.mac_origen] = f"Dispositivo {decoded_frame.mac_origen[-6:]}"
-                        self.guardar_contactos()
-                        self.actualizar_destinos()
+                    # Usar procesamiento mejorado que maneja discovery, seguridad, etc.
+                    self.procesar_mensaje_recibido_mejorado(decoded_frame.mac_origen, mensaje)
                 
                 elif decoded_frame.tipo_mensaje == Tipo_Mensaje.archivo:
                     print("📁 Frame de archivo recibido")
@@ -760,9 +870,205 @@ class ChatMinimalTkinter:
         
         return True
     
+    # === NUEVAS FUNCIONALIDADES ===
+    
+    def seleccionar_carpeta(self):
+        """Selecciona una carpeta para enviar"""
+        folder_path = filedialog.askdirectory(
+            title="Seleccionar carpeta para enviar"
+        )
+        
+        if folder_path:
+            self.carpeta_seleccionada = folder_path
+            nombre_carpeta = os.path.basename(folder_path)
+            
+            # Obtener información de la carpeta
+            if self.folder_transfer:
+                total_size, file_count = self.folder_transfer.get_folder_size(folder_path)
+                size_mb = total_size / (1024 * 1024)
+                
+                texto = f"Carpeta: {nombre_carpeta} ({file_count} archivos, {size_mb:.1f} MB)"
+            else:
+                texto = f"Carpeta: {nombre_carpeta}"
+            
+            self.lbl_archivo.config(text=texto)
+            self.btn_enviar_carpeta.config(state=tk.NORMAL)
+            
+            # Deshabilitar envío de archivo
+            self.btn_enviar_archivo.config(state=tk.DISABLED)
+            self.archivo_seleccionado = None
+            
+            self.mostrar_mensaje("Sistema", f"Carpeta seleccionada: {nombre_carpeta}")
+    
+    def enviar_carpeta(self):
+        """Envía la carpeta seleccionada"""
+        if not self.carpeta_seleccionada:
+            messagebox.showerror("Error", "Primero selecciona una carpeta")
+            return
+        
+        if not self.folder_transfer:
+            messagebox.showerror("Error", "Gestor de carpetas no inicializado")
+            return
+        
+        # Deshabilitar botones durante el envío
+        self.btn_enviar_carpeta.config(state=tk.DISABLED)
+        self.btn_seleccionar_carpeta.config(state=tk.DISABLED)
+        
+        # Mostrar mensaje de inicio
+        nombre_carpeta = os.path.basename(self.carpeta_seleccionada)
+        self.mostrar_mensaje("Sistema", f"Enviando carpeta: {nombre_carpeta}...")
+        
+        # Enviar en hilo separado
+        threading.Thread(
+            target=self._enviar_carpeta_thread, 
+            daemon=True
+        ).start()
+    
+    def _enviar_carpeta_thread(self):
+        """Envía la carpeta en un hilo separado"""
+        try:
+            def progress_callback(progress, status):
+                # Actualizar en hilo principal
+                self.root.after(0, lambda: self.mostrar_mensaje("Sistema", f"Progreso: {progress:.1f}% - {status}"))
+            
+            exito, mensaje = self.folder_transfer.send_folder(
+                self.carpeta_seleccionada, 
+                self.destino_actual,
+                progress_callback
+            )
+            
+            # Actualizar interfaz en el hilo principal
+            self.root.after(0, self._callback_envio_carpeta, exito, mensaje)
+            
+        except Exception as e:
+            self.root.after(0, self._callback_envio_carpeta, False, f"Error: {str(e)}")
+    
+    def _callback_envio_carpeta(self, exito, mensaje):
+        """Callback cuando termina el envío de la carpeta"""
+        # Rehabilitar botones
+        self.btn_seleccionar_carpeta.config(state=tk.NORMAL)
+        
+        if exito:
+            nombre_carpeta = os.path.basename(self.carpeta_seleccionada)
+            self.mostrar_mensaje("Sistema", f"Carpeta enviada: {nombre_carpeta}")
+            
+            # Limpiar selección
+            self.carpeta_seleccionada = None
+            self.lbl_archivo.config(text="Ningun elemento seleccionado")
+        else:
+            self.btn_enviar_carpeta.config(state=tk.NORMAL)
+            self.mostrar_mensaje("Error", f"Fallo en envío: {mensaje}")
+    
+    def toggle_security(self):
+        """Habilita/deshabilita la seguridad"""
+        if not self.security_manager:
+            return
+        
+        if self.security_manager.security_enabled:
+            self.security_manager.disable_security()
+            self.btn_habilitar_seguridad.config(text="Habilitar Seguridad")
+            self.lbl_seguridad.config(text="Seguridad: Deshabilitada", fg='red')
+        else:
+            if self.security_manager.enable_security():
+                self.btn_habilitar_seguridad.config(text="Deshabilitar Seguridad")
+                self.lbl_seguridad.config(text="Seguridad: Habilitada", fg='green')
+            else:
+                messagebox.showerror("Error", "No se pudo habilitar la seguridad")
+    
+    def buscar_dispositivos(self):
+        """Inicia búsqueda activa de dispositivos"""
+        if not self.discovery_manager:
+            return
+        
+        self.discovery_manager.send_discovery_request()
+        self.mostrar_mensaje("Sistema", "Buscando dispositivos en la red...")
+        
+        # Mostrar dispositivos encontrados después de un momento
+        self.root.after(3000, self.mostrar_dispositivos_encontrados)
+    
+    def mostrar_dispositivos_encontrados(self):
+        """Muestra los dispositivos encontrados"""
+        if not self.discovery_manager:
+            return
+        
+        devices = self.discovery_manager.get_discovered_devices()
+        count = len(devices)
+        
+        self.mostrar_mensaje("Sistema", f"Dispositivos encontrados: {count}")
+        for mac, info in devices.items():
+            self.mostrar_mensaje("Sistema", f"- {info['hostname']} ({mac})")
+    
+    def on_device_discovered(self, device_info: dict):
+        """Callback cuando se descubre un nuevo dispositivo"""
+        mac = device_info['mac']
+        hostname = device_info['hostname']
+        
+        # Agregar a contactos automáticamente
+        if mac not in self.contactos:
+            self.contactos[mac] = hostname
+            self.guardar_contactos()
+            self.actualizar_destinos()
+        
+        # Notificar al usuario
+        self.mostrar_mensaje("Discovery", f"Nuevo dispositivo: {hostname} ({mac})")
+    
+    def mostrar_estadisticas(self):
+        """Muestra estadísticas del sistema"""
+        if not self.com:
+            messagebox.showinfo("Estadísticas", "No hay conexión activa")
+            return
+        
+        estadisticas = self.com.obtener_estadisticas()
+        
+        # Agregar estadísticas de discovery y seguridad
+        if self.discovery_manager:
+            device_count = self.discovery_manager.get_device_count()
+            estadisticas['dispositivos_descubiertos'] = device_count
+        
+        if self.security_manager:
+            security_status = self.security_manager.get_security_status()
+            estadisticas.update(security_status)
+        
+        # Crear mensaje de estadísticas
+        mensaje = "=== ESTADÍSTICAS ===\n"
+        mensaje += f"Mensajes enviados: {estadisticas.get('mensajes_enviados', 0)}\n"
+        mensaje += f"Mensajes recibidos: {estadisticas.get('mensajes_recibidos', 0)}\n"
+        mensaje += f"Fragmentos enviados: {estadisticas.get('fragmentos_enviados', 0)}\n"
+        mensaje += f"Fragmentos recibidos: {estadisticas.get('fragmentos_recibidos', 0)}\n"
+        mensaje += f"Dispositivos descubiertos: {estadisticas.get('dispositivos_descubiertos', 0)}\n"
+        mensaje += f"Canales seguros: {estadisticas.get('secure_channels', 0)}\n"
+        mensaje += f"Seguridad habilitada: {'Sí' if estadisticas.get('enabled', False) else 'No'}"
+        
+        messagebox.showinfo("Estadísticas del Sistema", mensaje)
+    
+    def procesar_mensaje_recibido_mejorado(self, mac_origen: str, mensaje: str):
+        """Versión mejorada del procesamiento de mensajes"""
+        
+        # Procesar mensajes de discovery
+        if self.discovery_manager and self.discovery_manager.process_discovery_message(mac_origen, mensaje):
+            return
+        
+        # Procesar mensajes de seguridad
+        if self.security_manager and self.security_manager.process_security_message(mac_origen, mensaje):
+            return
+        
+        # Procesar mensajes de carpetas
+        if self.folder_transfer and self.folder_transfer.receive_folder_metadata(mensaje, mac_origen):
+            return
+        
+        # Procesar mensaje normal
+        self.manejar_mensaje_recibido(mac_origen, mensaje)
+
     def salir(self):
         """Cierra la aplicación"""
         if messagebox.askokcancel("Salir", "¿Estás seguro?"):
+            # Detener todos los servicios
+            if self.discovery_manager:
+                self.discovery_manager.stop_discovery()
+            if self.security_manager:
+                self.security_manager.disable_security()
+            if self.folder_transfer:
+                self.folder_transfer.cleanup_temp_files()
             if self.com:
                 self.com.stop()
                 self.stop_event.set()

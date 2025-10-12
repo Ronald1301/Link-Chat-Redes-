@@ -281,17 +281,3 @@ class Frame:
     def actualizar_crc(self, data:bytes) -> bytes:
         crc = binascii.crc32(data) & 0xffffffff
         return crc.to_bytes(4, 'big')
-
-
-class Tipo_Mensaje(Enum):
-    texto = 1
-    archivo = 2
-    
-    @classmethod
-    def from_value(cls, value):
-        if isinstance(value, cls):
-            return value
-        try:
-            return cls(value)
-        except ValueError:
-            raise ValueError("Tipo no valido")

@@ -1,7 +1,7 @@
 import os
 import time
 from typing import Dict, Optional
-from frames import Frame, Tipo_Mensaje
+from ..core.frames import Frame, Tipo_Mensaje
 class FileTransfer:
     def __init__(self, chat_app):
         self.chat_app = chat_app
@@ -171,7 +171,13 @@ class FileTransfer:
             with open(nombre_archivo, 'wb') as f:
                 f.write(archivo['datos'])
             
-            # Mostrar mensaje de éxito
+            # Verificar si es parte de una transferencia de carpeta
+            if hasattr(self.chat_app, 'folder_transfer') and self.chat_app.folder_transfer:
+                if self.chat_app.folder_transfer.check_folder_file_received(nombre_archivo, mac_origen):
+                    # Era parte de una carpeta, ya fue procesado
+                    return
+            
+            # Mostrar mensaje de éxito para archivo normal
             tamaño = len(archivo['datos'])
             mensaje = f"Archivo guardado: {nombre_base} ({tamaño} bytes)"
              # Usar after para programar la actualización de UI de forma segura

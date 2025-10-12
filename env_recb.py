@@ -3,9 +3,9 @@ import threading
 import time
 import random
 import queue
-from mac import Mac
-from frames import Frame, Tipo_Mensaje
-from fragmentation import FragmentManager
+from .mac import Mac
+from .frames import Frame, Tipo_Mensaje
+from .fragmentation import FragmentManager
 import struct
 from typing import Callable, Optional, Union
 

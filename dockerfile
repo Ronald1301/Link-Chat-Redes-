@@ -1,20 +1,30 @@
-FROM python:3.9
+FROM ubuntu:22.04
 
-# Instalar dependencias necesarias
+# Evitar prompts interactivos
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Instalar dependencias para networking de bajo nivel
 RUN apt-get update && apt-get install -y \
+    python3 \
+    python3-pip \
+    python3-tk \
     tcpdump \
     net-tools \
     iproute2 \
+    iputils-ping \
+    macchanger \
+    bridge-utils \
+    vlan \
     && rm -rf /var/lib/apt/lists/*
 
-# Crear directorio de trabajo
 WORKDIR /app
-
-# Copiar archivos del proyecto
 COPY . .
 
-# Crear directorio para archivos descargados
-RUN mkdir -p LinkChat_Files
+# Crear directorios necesarios
+RUN mkdir -p downloads LinkChat_Files
 
-# Ejecutar la aplicación
-CMD ["python", "app.py"]
+# Script de inicio que acepta interfaz como parámetro
+RUN echo '#!/bin/bash\nINTERFACE=${1:-eth0}\necho "Usando interfaz: $INTERFACE"\npython3 app.py $INTERFACE' > /app/start.sh
+RUN chmod +x /app/start.sh
+
+CMD ["/app/start.sh"]
