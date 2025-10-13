@@ -408,61 +408,8 @@ class Envio_recibo_frames:
         self.ejecutando = False
         if self.mi_socket:
             self.mi_socket.close()
-        print("🔌 Comunicación detenida")
+        print(" Comunicación detenida")
 
-
-    def _procesar_frame_recibido(self, frame: Frame, callback):
-        """Procesa un frame recibido, manejando fragmentación si es necesario"""
-        self.estadisticas['fragmentos_recibidos'] += 1
-        
-        if frame.es_fragmento:
-            # Es un fragmento de un mensaje más grande
-            mensaje_completo = self.fragment_manager.agregar_fragmento(
-                frame.id_mensaje, 
-                frame.fragmento, 
-                frame.total_fragmentos,
-                frame.datos,
-                frame.mac_origen
-            )
-            
-            if mensaje_completo is not None:
-                # ¡Mensaje completo reensamblado!
-                # Solo contar como mensaje recibido si es texto del usuario
-                if frame.tipo_mensaje == Tipo_Mensaje.texto:
-                    self.estadisticas['mensajes_recibidos'] += 1
-                elif frame.tipo_mensaje == Tipo_Mensaje.archivo:
-                    self.estadisticas['archivos_recibidos'] += 1
-                    
-                print(f"🎉 Mensaje reensamblado: {len(mensaje_completo)} bytes de {frame.total_fragmentos} fragmentos")
-                
-                try:
-                    mensaje = mensaje_completo.decode('utf-8')
-                    if callback:
-                        callback(frame.mac_origen, mensaje)
-                except UnicodeDecodeError:
-                    if callback:
-                        callback(frame.mac_origen, mensaje_completo)
-            else:
-                # Aún faltan fragmentos
-                estado = self.fragment_manager.obtener_estado_ensamblaje()
-                print(f"📦 Fragmento {frame.fragmento+1}/{frame.total_fragmentos} recibido (pendientes: {estado['mensajes_pendientes']})")
-        
-        else:
-            # Mensaje normal (no fragmentado)
-            # Solo contar como mensaje recibido si es texto del usuario
-            if frame.tipo_mensaje == Tipo_Mensaje.texto:
-                self.estadisticas['mensajes_recibidos'] += 1
-            elif frame.tipo_mensaje == Tipo_Mensaje.archivo:
-                self.estadisticas['archivos_recibidos'] += 1
-                
-            try:
-                mensaje = frame.datos.rstrip(b'\x00').decode('utf-8')
-                if callback:
-                    callback(frame.mac_origen, mensaje)
-            except UnicodeDecodeError:
-                if callback:
-                    callback(frame.mac_origen, frame.datos)
-    
     def obtener_estadisticas(self):
         """Retorna estadísticas de fragmentación"""
         estado_ensamblaje = self.fragment_manager.obtener_estado_ensamblaje()
@@ -481,11 +428,4 @@ class Envio_recibo_frames:
             'frames_protocolo_enviados': 0   # Frames de protocolo (discovery, seguridad, etc.)
         }
         print("📊 Estadísticas reiniciadas")
-    
-    def stop(self):
-        self.ejecutando = False
-        if self.mi_socket:
-            self.mi_socket.close()
-            print("🔌 Socket cerrado")
-
     

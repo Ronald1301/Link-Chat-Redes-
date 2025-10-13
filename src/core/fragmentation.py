@@ -11,7 +11,7 @@ class FragmentManager:
         self.lock = Lock()  # Para thread safety
         
     def agregar_fragmento(self, id_mensaje: int, num_fragmento: int, total_fragmentos: int, datos: bytes, mac_origen: str) -> Optional[bytes]:
-        """Agrega un fragmento y devuelve el mensaje completo si está listo"""
+        #Agrega un fragmento y devuelve el mensaje completo si está listo
         with self.lock:
             clave = f"{mac_origen}_{id_mensaje}"
             
@@ -46,20 +46,20 @@ class FragmentManager:
                 mensaje['fragmentos_recibidos'][num_fragmento] = datos
                 mensaje['bytes_totales'] += len(datos)
                 mensaje['timestamp'] = time.time()
-                print(f"🔧 FragmentManager: Fragmento {num_fragmento} almacenado")
+                print(f" FragmentManager: Fragmento {num_fragmento} almacenado")
             else:
-                print(f"⚠️  FragmentManager: Fragmento {num_fragmento} ya estaba almacenado")
+                print(f"  FragmentManager: Fragmento {num_fragmento} ya estaba almacenado")
             
             # VERIFICACIÓN CORREGIDA: Comprobar si tenemos todos los fragmentos esperados
             fragmentos_recibidos = set(mensaje['fragmentos_recibidos'].keys())
             fragmentos_faltantes = mensaje['fragmentos_esperados'] - fragmentos_recibidos
             
-            print(f"🔧 FragmentManager: Fragmentos recibidos: {len(fragmentos_recibidos)}/{mensaje['total_fragmentos']}")
-            print(f"🔧 FragmentManager: Fragmentos faltantes: {sorted(fragmentos_faltantes)}")
+            print(f" FragmentManager: Fragmentos recibidos: {len(fragmentos_recibidos)}/{mensaje['total_fragmentos']}")
+            print(f" FragmentManager: Fragmentos faltantes: {sorted(fragmentos_faltantes)}")
             
             if not fragmentos_faltantes:
                 # ¡Todos los fragmentos recibidos!
-                print(f"🎉 FragmentManager: TODOS los fragmentos recibidos para {clave}")
+                print(f" FragmentManager: TODOS los fragmentos recibidos para {clave}")
                 
                 try:
                     # Reensamblar en orden
@@ -68,14 +68,14 @@ class FragmentManager:
                         fragmentos_ordenados.append(mensaje['fragmentos_recibidos'][i])
                     
                     mensaje_completo = b''.join(fragmentos_ordenados)
-                    print(f"🎉 FragmentManager: Mensaje reensamblado - {len(mensaje_completo)} bytes")
+                    print(f" FragmentManager: Mensaje reensamblado - {len(mensaje_completo)} bytes")
                     
                     # Limpiar
                     del self.fragmentos_pendientes[clave]
                     return mensaje_completo
                     
                 except Exception as e:
-                    print(f"❌ FragmentManager: Error reensamblando mensaje: {e}")
+                    print(f" FragmentManager: Error reensamblando mensaje: {e}")
                     import traceback
                     traceback.print_exc()
                     del self.fragmentos_pendientes[clave]
@@ -83,7 +83,7 @@ class FragmentManager:
             else:
                 # Mostrar progreso detallado
                 progreso = len(fragmentos_recibidos) / mensaje['total_fragmentos'] * 100
-                print(f"📊 FragmentManager: Progreso: {progreso:.1f}% ({len(fragmentos_recibidos)}/{mensaje['total_fragmentos']})")
+                print(f" FragmentManager: Progreso: {progreso:.1f}% ({len(fragmentos_recibidos)}/{mensaje['total_fragmentos']})")
             
             # Limpiar mensajes antiguos
             self._limpiar_antiguos()
