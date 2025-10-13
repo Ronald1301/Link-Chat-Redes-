@@ -85,8 +85,6 @@ class ChatMinimalTkinter:
         self.folder_transfer = None
         self.security_manager = None
 
-
-        self.contador_mensajes = 0  # INICIALIZAR contador_mensajes
         self.ejecutando_recepcion = False  # Control para el hilo de recepción
         
         self.cargar_contactos()
@@ -378,6 +376,7 @@ class ChatMinimalTkinter:
 
         tk.Button(btn_frame, text="Limpiar", command=self.limpiar_mensajes, width=8, bg=self.button_bg, fg=self.fg_color, font=('Arial', self.font_size), relief="solid", bd=1).pack(side=tk.LEFT, padx=2)
         tk.Button(btn_frame, text="Estadísticas", command=self.mostrar_estadisticas, width=10, bg=self.button_bg, fg=self.fg_color, font=('Arial', self.font_size), relief="solid", bd=1).pack(side=tk.LEFT, padx=2)
+        tk.Button(btn_frame, text="Reset Stats", command=self.reiniciar_estadisticas, width=10, bg=self.button_bg, fg=self.fg_color, font=('Arial', self.font_size), relief="solid", bd=1).pack(side=tk.LEFT, padx=2)
         tk.Button(btn_frame, text="Salir", command=self.salir, width=8, bg=self.button_bg, fg=self.fg_color, font=('Arial', self.font_size), relief="solid", bd=1).pack(side=tk.LEFT, padx=2)
         
         # Bind selección de destino
@@ -787,22 +786,20 @@ class ChatMinimalTkinter:
         frames = self.com.crear_frame(self.destino_actual, Tipo_Mensaje.texto, mensaje_final)
         
         if frames:
-            self.com.enviar_frame(frames)
+            self.com.enviar_frame(frames, contar_como_mensaje_usuario=True)
 
         self.mensaje_entry.delete('1.0', tk.END)
     
     def _enviar_mensaje_thread(self, mensaje, destino):
         """Envía mensaje en hilo separado"""
         try:
-            self.contador_mensajes += 1
             frame = self.com.crear_frame(
                 destino,
-    
                 Tipo_Mensaje.texto.value,
                 mensaje
             )
             
-            bytes_enviados = self.com.enviar_frame(frame)
+            bytes_enviados = self.com.enviar_frame(frame, contar_como_mensaje_usuario=True)
             
             if bytes_enviados > 0:
                 self.root.after(0, lambda: self.mostrar_mensaje("Yo", mensaje))
@@ -1065,16 +1062,59 @@ class ChatMinimalTkinter:
             estadisticas.update(security_status)
         
         # Crear mensaje de estadísticas
-        mensaje = "=== ESTADÍSTICAS ===\n"
-        mensaje += f"Mensajes enviados: {estadisticas.get('mensajes_enviados', 0)}\n"
-        mensaje += f"Mensajes recibidos: {estadisticas.get('mensajes_recibidos', 0)}\n"
-        mensaje += f"Fragmentos enviados: {estadisticas.get('fragmentos_enviados', 0)}\n"
-        mensaje += f"Fragmentos recibidos: {estadisticas.get('fragmentos_recibidos', 0)}\n"
-        mensaje += f"Dispositivos descubiertos: {estadisticas.get('dispositivos_descubiertos', 0)}\n"
-        mensaje += f"Canales seguros: {estadisticas.get('secure_channels', 0)}\n"
-        mensaje += f"Seguridad habilitada: {'Sí' if estadisticas.get('enabled', False) else 'No'}"
+        mensaje = "=== ESTADÍSTICAS DEL SISTEMA ===\n\n"
+        mensaje += "📊 COMUNICACIÓN:\n"
+        mensaje += f"   • Mensajes enviados: {estadisticas.get('mensajes_enviados', 0)}\n"
+        mensaje += f"   • Mensajes recibidos: {estadisticas.get('mensajes_recibidos', 0)}\n"
+        mensaje += f"   • Mensajes fragmentados: {estadisticas.get('mensajes_fragmentados', 0)}\n\n"
+        
+        mensaje += "� ARCHIVOS:\n"
+        mensaje += f"   • Archivos enviados: {estadisticas.get('archivos_enviados', 0)}\n"
+        mensaje += f"   • Archivos recibidos: {estadisticas.get('archivos_recibidos', 0)}\n\n"
+        
+        mensaje += "�📦 FRAGMENTACIÓN:\n"
+        mensaje += f"   • Fragmentos enviados: {estadisticas.get('fragmentos_enviados', 0)}\n"
+        mensaje += f"   • Fragmentos recibidos: {estadisticas.get('fragmentos_recibidos', 0)}\n"
+        mensaje += f"   • Mensajes pendientes: {estadisticas.get('mensajes_pendientes', 0)}\n\n"
+        
+        mensaje += "🔧 PROTOCOLO:\n"
+        mensaje += f"   • Frames de protocolo enviados: {estadisticas.get('frames_protocolo_enviados', 0)}\n\n"
+        
+        mensaje += "🔍 DESCUBRIMIENTO:\n"
+        mensaje += f"   • Dispositivos descubiertos: {estadisticas.get('dispositivos_descubiertos', 0)}\n\n"
+        
+        mensaje += "🔒 SEGURIDAD:\n"
+        mensaje += f"   • Canales seguros activos: {estadisticas.get('secure_channels', 0)}\n"
+        mensaje += f"   • Sistema seguridad: {'✅ Habilitado' if estadisticas.get('enabled', False) else '❌ Deshabilitado'}\n\n"
+        
+        mensaje += "📋 CONTACTOS:\n"
+        mensaje += f"   • Total contactos: {len(self.contactos)}\n"
+        mensaje += f"   • Destino actual: {self.destino_actual}"
         
         messagebox.showinfo("Estadísticas del Sistema", mensaje)
+    
+    def reiniciar_estadisticas(self):
+        """Reinicia las estadísticas del sistema"""
+        if not self.com:
+            messagebox.showinfo("Reiniciar Estadísticas", "No hay conexión activa")
+            return
+        
+        respuesta = messagebox.askyesno(
+            "Reiniciar Estadísticas", 
+            "¿Está seguro de que desea reiniciar todas las estadísticas a cero?"
+        )
+        
+        if respuesta:
+            self.com.reiniciar_estadisticas()
+            
+            # También reiniciar estadísticas de otros módulos si existen
+            if self.discovery_manager and hasattr(self.discovery_manager, 'reset_statistics'):
+                self.discovery_manager.reset_statistics()
+            
+            if self.security_manager and hasattr(self.security_manager, 'reset_statistics'):
+                self.security_manager.reset_statistics()
+            
+            messagebox.showinfo("Estadísticas Reiniciadas", "Todas las estadísticas han sido reiniciadas a cero.")
     
     def procesar_mensaje_recibido_mejorado(self, mac_origen: str, mensaje: str):
         """Versión mejorada del procesamiento de mensajes"""

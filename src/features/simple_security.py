@@ -105,7 +105,7 @@ class SimpleSecurityManager:
                 mensaje
             )
             
-            self.chat_app.com.enviar_frame(frames)
+            self.chat_app.com.enviar_protocolo(frames)
             print(f"🔑 Solicitud de intercambio de claves enviada a {target_mac}")
             return True
             
@@ -183,7 +183,7 @@ class SimpleSecurityManager:
                 mensaje
             )
             
-            self.chat_app.com.enviar_frame(frames)
+            self.chat_app.com.enviar_protocolo(frames)
             
             print(f"🔑 Clave de sesión establecida con {mac_origen}")
             

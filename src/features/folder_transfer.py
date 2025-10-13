@@ -72,7 +72,7 @@ class FolderTransfer:
                 f"FOLDER_START:{metadata_json}"
             )
             
-            self.chat_app.com.enviar_frame(metadata_frames)
+            self.chat_app.com.enviar_archivo(metadata_frames)
             
             # Enviar cada archivo individualmente con su ruta relativa
             files_sent = 0
@@ -92,7 +92,7 @@ class FolderTransfer:
                     f"FOLDER_FILE:{file_info_json}"
                 )
                 
-                self.chat_app.com.enviar_frame(file_info_frames)
+                self.chat_app.com.enviar_archivo(file_info_frames)
                 
                 # Enviar el archivo usando el sistema existente
                 success, message = self.chat_app.file_transfer.send_file(full_path, dest_mac)
@@ -120,7 +120,7 @@ class FolderTransfer:
                 f"FOLDER_END:{end_metadata_json}"
             )
             
-            self.chat_app.com.enviar_frame(end_metadata_frames)
+            self.chat_app.com.enviar_archivo(end_metadata_frames)
             
             if progress_callback:
                 progress_callback(100, "Carpeta enviada exitosamente")

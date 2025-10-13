@@ -30,13 +30,16 @@ class Envio_recibo_frames:
         self.cola_mensajes = queue.Queue()
         self.conectar()
         
-        # Estadísticas de fragmentación
+        # Estadísticas de comunicación
         self.estadisticas = {
-            'mensajes_enviados': 0,
-            'mensajes_recibidos': 0,
-            'fragmentos_enviados': 0,
-            'fragmentos_recibidos': 0,
-            'mensajes_fragmentados': 0
+            'mensajes_enviados': 0,          # Solo mensajes de texto del usuario
+            'mensajes_recibidos': 0,         # Solo mensajes de texto recibidos
+            'fragmentos_enviados': 0,        # Todos los frames enviados
+            'fragmentos_recibidos': 0,       # Todos los frames recibidos
+            'mensajes_fragmentados': 0,      # Mensajes que requirieron fragmentación
+            'archivos_enviados': 0,          # Archivos enviados
+            'archivos_recibidos': 0,         # Archivos recibidos
+            'frames_protocolo_enviados': 0   # Frames de protocolo (discovery, seguridad, etc.)
         }
 
     def conectar(self):
@@ -52,16 +55,44 @@ class Envio_recibo_frames:
         except Exception as e:
             raise Exception(f"Error conectando a {self.interfaz}: {e}")
         
-    def enviar_frame(self, frames):
+    def enviar_frame(self, frames, contar_como_mensaje_usuario=False):
+        total_bytes = 0
         for i, frame in enumerate(frames):
             try:
                 print(f"📤 Frame {i+1}/{len(frames)}: {len(frame)} bytes")
                 print(f"📤 Primeros 50 bytes hex: {frame.hex()[:100]}...")
                 bytes_sent = self.mi_socket.send(frame)
                 print(f"Frame {i+1}/{len(frames)} enviado ({bytes_sent} bytes)")
+                
+                # Actualizar estadísticas de envío - siempre contar fragmentos
+                self.estadisticas['fragmentos_enviados'] += 1
+                total_bytes += bytes_sent
+                
             except Exception as e:
                 print(f"Error enviando frame {i+1}: {e}")
                 raise
+        
+        # Solo contar como "mensaje enviado" si está marcado como mensaje de usuario
+        if len(frames) > 0 and contar_como_mensaje_usuario:
+            self.estadisticas['mensajes_enviados'] += 1
+            if len(frames) > 1:
+                self.estadisticas['mensajes_fragmentados'] += 1
+        
+        return total_bytes
+    
+    def enviar_archivo(self, frames):
+        """Envía frames de archivo y actualiza estadísticas correspondientes"""
+        total_bytes = self.enviar_frame(frames, contar_como_mensaje_usuario=False)
+        if len(frames) > 0:
+            self.estadisticas['archivos_enviados'] += 1
+        return total_bytes
+    
+    def enviar_protocolo(self, frames):
+        """Envía frames de protocolo (discovery, seguridad, etc.) y actualiza estadísticas"""
+        total_bytes = self.enviar_frame(frames, contar_como_mensaje_usuario=False)
+        if len(frames) > 0:
+            self.estadisticas['frames_protocolo_enviados'] += 1
+        return total_bytes
 
     def receive_frame(self, buff_size=65535):
         try:
@@ -396,7 +427,12 @@ class Envio_recibo_frames:
             
             if mensaje_completo is not None:
                 # ¡Mensaje completo reensamblado!
-                self.estadisticas['mensajes_recibidos'] += 1
+                # Solo contar como mensaje recibido si es texto del usuario
+                if frame.tipo_mensaje == Tipo_Mensaje.texto:
+                    self.estadisticas['mensajes_recibidos'] += 1
+                elif frame.tipo_mensaje == Tipo_Mensaje.archivo:
+                    self.estadisticas['archivos_recibidos'] += 1
+                    
                 print(f"🎉 Mensaje reensamblado: {len(mensaje_completo)} bytes de {frame.total_fragmentos} fragmentos")
                 
                 try:
@@ -413,7 +449,12 @@ class Envio_recibo_frames:
         
         else:
             # Mensaje normal (no fragmentado)
-            self.estadisticas['mensajes_recibidos'] += 1
+            # Solo contar como mensaje recibido si es texto del usuario
+            if frame.tipo_mensaje == Tipo_Mensaje.texto:
+                self.estadisticas['mensajes_recibidos'] += 1
+            elif frame.tipo_mensaje == Tipo_Mensaje.archivo:
+                self.estadisticas['archivos_recibidos'] += 1
+                
             try:
                 mensaje = frame.datos.rstrip(b'\x00').decode('utf-8')
                 if callback:
@@ -426,6 +467,20 @@ class Envio_recibo_frames:
         """Retorna estadísticas de fragmentación"""
         estado_ensamblaje = self.fragment_manager.obtener_estado_ensamblaje()
         return {**self.estadisticas, **estado_ensamblaje}
+    
+    def reiniciar_estadisticas(self):
+        """Reinicia las estadísticas a cero"""
+        self.estadisticas = {
+            'mensajes_enviados': 0,          # Solo mensajes de texto del usuario
+            'mensajes_recibidos': 0,         # Solo mensajes de texto recibidos
+            'fragmentos_enviados': 0,        # Todos los frames enviados
+            'fragmentos_recibidos': 0,       # Todos los frames recibidos
+            'mensajes_fragmentados': 0,      # Mensajes que requirieron fragmentación
+            'archivos_enviados': 0,          # Archivos enviados
+            'archivos_recibidos': 0,         # Archivos recibidos
+            'frames_protocolo_enviados': 0   # Frames de protocolo (discovery, seguridad, etc.)
+        }
+        print("📊 Estadísticas reiniciadas")
     
     def stop(self):
         self.ejecutando = False

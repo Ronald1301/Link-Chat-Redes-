@@ -38,7 +38,7 @@ class FileTransfer:
             )
             
             # Enviar todos los frames (frames ya es una lista de bytes)
-            self.chat_app.com.enviar_frame(frames)
+            self.chat_app.com.enviar_archivo(frames)
             print(f"✅ Archivo {nombre_archivo} enviado en {len(frames)} frame(s)")
             
             return True, f"Archivo {nombre_archivo} enviado exitosamente"

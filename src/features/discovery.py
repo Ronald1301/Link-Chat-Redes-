@@ -100,7 +100,7 @@ class DiscoveryManager:
                 mensaje
             )
             
-            self.com.enviar_frame(frames)
+            self.com.enviar_protocolo(frames)
             print(f"📡 Heartbeat enviado: {self.local_info['hostname']}")
             
         except Exception as e:
@@ -194,7 +194,7 @@ class DiscoveryManager:
                 mensaje
             )
             
-            self.com.enviar_frame(frames)
+            self.com.enviar_protocolo(frames)
             print("🔍 Solicitud de discovery enviada")
             
         except Exception as e:
