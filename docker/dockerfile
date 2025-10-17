@@ -1,13 +1,51 @@
-FROM ubuntu:22.04
+# FROM ubuntu:22.04
+
+# Evitar prompts interactivos
+# ENV DEBIAN_FRONTEND=noninteractive
+
+# Configurar zona horaria
+# ENV TZ=UTC
+# RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
+# Instalar dependencias
+# RUN apt-get update && apt-get install -y \
+  #  python3 \
+# python3-pip \
+   # python3-tk \
+    #tcpdump \
+    #net-tools \
+    #iproute2 \
+    #iputils-ping \
+    #netcat-openbsd \
+    #curl \
+    #wget \
+    #&& rm -rf /var/lib/apt/lists/*
+
+#WORKDIR /app
+#COPY . .
+
+# Crear directorios necesarios
+#RUN mkdir -p downloads LinkChat_Files
+
+# Script de inicio mejorado
+#RUN echo '#!/bin/bash\nINTERFACE=${1:-eth0}\necho "=== LINK-CHAT DOCKER === "\necho "Nodo: ${NODE_NAME:-Mi-Nodo}"\necho "Interfaz: $INTERFACE"\necho "MAC: $(ip link show $INTERFACE 2>/dev/null | grep link/ether | awk \"{print \\$2}\" || echo "No disponible")"\necho "IP: $(ip addr show $INTERFACE 2>/dev/null | grep "inet " | awk \"{print \\$2}\" || echo "No disponible")"\necho "Red disponible para comunicación peer-to-peer"\necho "================"\n\n# Configurar display para GUI\nexport DISPLAY=${DISPLAY:-:0}\n\n# Ejecutar aplicación\necho "🚀 Iniciando Link-Chat..."\npython3 app.py $INTERFACE\n\n# Mantener contenedor activo si la app cierra\necho "💤 Aplicación finalizada. Manteniendo contenedor activo..."\ntail -f /dev/null' > /app/start.sh
+#RUN chmod +x /app/start.sh
+
+# Exponer puerto para posible comunicación adicional
+#EXPOSE 8080
+
+#CMD ["/bin/bash", "/app/start.sh"]
+
+
+
+# Usar imagen base de Python más ligera
+FROM python:3.11-slim
 
 # Evitar prompts interactivos
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Instalar dependencias para networking de bajo nivel
-RUN apt-get update && apt-get install -y \
-    python3 \
-    python3-pip \
-    python3-tk \
+# Instalar dependencias esenciales para networking de bajo nivel y GUI
+RUN apt-get update && apt-get install -y --no-install-recommends \
     tcpdump \
     net-tools \
     iproute2 \
@@ -15,7 +53,11 @@ RUN apt-get update && apt-get install -y \
     macchanger \
     bridge-utils \
     vlan \
-    && rm -rf /var/lib/apt/lists/*
+    python3-tk \
+    tk-dev \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /tmp/* /var/tmp/*
 
 WORKDIR /app
 COPY . .
@@ -24,7 +66,8 @@ COPY . .
 RUN mkdir -p downloads LinkChat_Files
 
 # Script de inicio que acepta interfaz como parámetro
-RUN echo '#!/bin/bash\nINTERFACE=${1:-eth0}\necho "Usando interfaz: $INTERFACE"\npython3 app.py $INTERFACE' > /app/start.sh
+RUN echo '#!/bin/bash\nINTERFACE=${1:-eth0}\necho "Contenedor iniciado - Interfaz disponible: $INTERFACE"\necho "Para iniciar la aplicación ejecuta: python app_new.py"\necho "Entrando en modo interactivo..."\n/bin/bash' > /app/start.sh
 RUN chmod +x /app/start.sh
 
+# Mantener el contenedor activo en modo interactivo
 CMD ["/app/start.sh"]
