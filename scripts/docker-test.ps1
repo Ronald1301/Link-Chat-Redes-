@@ -245,7 +245,7 @@ function Remove-Everything {
         }
     }
     
-    Write-Success "Entorno completamente limpiado"
+    Write-Success "Entorno completamente limpio"
 }
 
 function Show-Status {
