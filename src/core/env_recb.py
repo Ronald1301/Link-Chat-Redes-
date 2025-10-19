@@ -12,7 +12,7 @@ from typing import Callable, Optional, Union
 
 
 class Envio_recibo_frames:
-    def __init__(self, interfaz = None):
+    def __init__(self, interfaz = None, progress_callback=None):
         if interfaz is not None:
             resultado = Mac.obtener_mac(interfaz)
         else:
@@ -26,7 +26,7 @@ class Envio_recibo_frames:
         self.ejecutando = True
         self.canal_ocupado = False
         self.lock = threading.Lock()
-        self.fragment_manager = FragmentManager()
+        self.fragment_manager = FragmentManager(progress_callback=progress_callback)
         self.cola_mensajes = queue.Queue()
         self.conectar()
         
@@ -55,7 +55,7 @@ class Envio_recibo_frames:
         except Exception as e:
             raise Exception(f"Error conectando a {self.interfaz}: {e}")
         
-    def enviar_frame(self, frames, contar_como_mensaje_usuario=False):
+    def enviar_frame(self, frames, contar_como_mensaje_usuario=False, progress_callback=None, archivo_nombre=None):
         total_bytes = 0
         for i, frame in enumerate(frames):
             try:
@@ -67,6 +67,18 @@ class Envio_recibo_frames:
                 # Actualizar estadísticas de envío - siempre contar fragmentos
                 self.estadisticas['fragmentos_enviados'] += 1
                 total_bytes += bytes_sent
+                
+                # Mostrar progreso de envío si hay callback y nombre de archivo
+                if progress_callback and archivo_nombre and len(frames) > 10:  # Solo para archivos con más de 10 fragmentos
+                    try:
+                        progress_callback(archivo_nombre, i+1, len(frames), total_bytes)
+                    except Exception as e:
+                        print(f"❌ Error en progress_callback de envío: {e}")
+                
+                # Agregar delay entre fragmentos para archivos grandes (más de 100 fragmentos)
+                if len(frames) > 100 and i < len(frames) - 1:
+                    import time
+                    time.sleep(0.001)  # 1ms de delay entre fragmentos
                 
             except Exception as e:
                 print(f"Error enviando frame {i+1}: {e}")
@@ -80,9 +92,10 @@ class Envio_recibo_frames:
         
         return total_bytes
     
-    def enviar_archivo(self, frames):
+    def enviar_archivo(self, frames, progress_callback=None, archivo_nombre=None):
         """Envía frames de archivo y actualiza estadísticas correspondientes"""
-        total_bytes = self.enviar_frame(frames, contar_como_mensaje_usuario=False)
+        total_bytes = self.enviar_frame(frames, contar_como_mensaje_usuario=False, 
+                                      progress_callback=progress_callback, archivo_nombre=archivo_nombre)
         if len(frames) > 0:
             self.estadisticas['archivos_enviados'] += 1
         return total_bytes
@@ -230,7 +243,17 @@ class Envio_recibo_frames:
     
          # Fragmentar el mensaje
         total_fragmentos = (longitud + 1475 - 1) // 1475
+        
+        # Verificar límites para evitar overflow
+        if total_fragmentos > 0xFFFFFFFF:  # 4 bytes máximo
+            raise ValueError(f"Archivo demasiado grande: requiere {total_fragmentos} fragmentos (máximo: {0xFFFFFFFF})")
+        
         print(f"🔧 Fragmentando mensaje en {total_fragmentos} partes")
+        print(f"🔧 Tamaño total: {longitud} bytes ({longitud / (1024*1024):.1f} MB)")
+        print(f"🔧 Fragmentos por MB: ~{1024*1024 // 1475}")
+        
+        if total_fragmentos > 100000:  # Advertencia para archivos muy grandes
+            print(f"⚠️  ARCHIVO MUY GRANDE: {total_fragmentos} fragmentos pueden tomar varios minutos")
 
         # Fragmentar el mensaje
         while offset < longitud:

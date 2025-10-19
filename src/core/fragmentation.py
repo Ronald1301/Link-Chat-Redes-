@@ -5,10 +5,11 @@ from threading import Lock
 from typing import Dict, List, Tuple, Optional
 
 class FragmentManager:
-    def __init__(self):
+    def __init__(self, progress_callback=None):
         self.fragmentos_pendientes: Dict[str, Dict] = {}
-        self.timeout = 30  # segundos
+        self.timeout = 1800  # 30 minutos para archivos grandes
         self.lock = Lock()  # Para thread safety
+        self.progress_callback = progress_callback  # Callback para mostrar progreso
         
     def agregar_fragmento(self, id_mensaje: int, num_fragmento: int, total_fragmentos: int, datos: bytes, mac_origen: str) -> Optional[bytes]:
         #Agrega un fragmento y devuelve el mensaje completo si está listo
@@ -59,31 +60,49 @@ class FragmentManager:
             
             if not fragmentos_faltantes:
                 # ¡Todos los fragmentos recibidos!
-                print(f" FragmentManager: TODOS los fragmentos recibidos para {clave}")
+                print(f"🎉 FragmentManager: TODOS los fragmentos recibidos para {clave}")
                 
                 try:
                     # Reensamblar en orden
+                    print(f"🔧 Reensamblando {mensaje['total_fragmentos']} fragmentos...")
                     fragmentos_ordenados = []
+                    bytes_totales = 0
                     for i in range(mensaje['total_fragmentos']):
-                        fragmentos_ordenados.append(mensaje['fragmentos_recibidos'][i])
+                        fragmento = mensaje['fragmentos_recibidos'][i]
+                        fragmentos_ordenados.append(fragmento)
+                        bytes_totales += len(fragmento)
                     
                     mensaje_completo = b''.join(fragmentos_ordenados)
-                    print(f" FragmentManager: Mensaje reensamblado - {len(mensaje_completo)} bytes")
+                    print(f"✅ FragmentManager: Mensaje reensamblado - {len(mensaje_completo)} bytes ({len(mensaje_completo) / (1024*1024):.1f} MB)")
                     
                     # Limpiar
                     del self.fragmentos_pendientes[clave]
                     return mensaje_completo
                     
                 except Exception as e:
-                    print(f" FragmentManager: Error reensamblando mensaje: {e}")
+                    print(f"❌ FragmentManager: Error reensamblando mensaje: {e}")
                     import traceback
                     traceback.print_exc()
                     del self.fragmentos_pendientes[clave]
                     return None
             else:
-                # Mostrar progreso detallado
+                # Mostrar progreso detallado cada 100 fragmentos o 10%
                 progreso = len(fragmentos_recibidos) / mensaje['total_fragmentos'] * 100
-                print(f" FragmentManager: Progreso: {progreso:.1f}% ({len(fragmentos_recibidos)}/{mensaje['total_fragmentos']})")
+                if len(fragmentos_recibidos) % 100 == 0 or progreso % 10 < 1:
+                    mb_recibidos = mensaje['bytes_totales'] / (1024 * 1024)
+                    print(f"📊 FragmentManager: Progreso: {progreso:.1f}% ({len(fragmentos_recibidos)}/{mensaje['total_fragmentos']}) - {mb_recibidos:.1f} MB recibidos")
+                    
+                    # Llamar callback de progreso si está disponible
+                    if self.progress_callback:
+                        try:
+                            self.progress_callback(
+                                mac_origen, 
+                                len(fragmentos_recibidos), 
+                                mensaje['total_fragmentos'], 
+                                mensaje['bytes_totales']
+                            )
+                        except Exception as e:
+                            print(f"❌ Error en progress_callback: {e}")
             
             # Limpiar mensajes antiguos
             self._limpiar_antiguos()
@@ -96,10 +115,12 @@ class FragmentManager:
         claves_a_eliminar = []
         
         for clave, mensaje in self.fragmentos_pendientes.items():
-            if ahora - mensaje['timestamp'] > self.timeout:
+            tiempo_transcurrido = ahora - mensaje['timestamp']
+            if tiempo_transcurrido > self.timeout:
                 claves_a_eliminar.append(clave)
                 fragmentos_recibidos = len(mensaje['fragmentos_recibidos'])
-                print(f"⏰ FragmentManager: Timeout para {clave} - {fragmentos_recibidos}/{mensaje['total_fragmentos']} fragmentos")
+                minutos_transcurridos = tiempo_transcurrido / 60
+                print(f"⏰ FragmentManager: Timeout para {clave} - {fragmentos_recibidos}/{mensaje['total_fragmentos']} fragmentos después de {minutos_transcurridos:.1f} minutos")
         
         for clave in claves_a_eliminar:
             del self.fragmentos_pendientes[clave]

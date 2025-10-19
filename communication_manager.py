@@ -22,7 +22,9 @@ class CommunicationManager:
     def conectar(self, interfaz):
         """Conecta usando la interfaz seleccionada"""
         self.stop_event = threading.Event()
-        self.com = Envio_recibo_frames(interfaz=interfaz)
+        # Pasar callback de progreso para recepción
+        progress_callback = lambda mac, recv, total, bytes_recv: self.app.mostrar_progreso_recepcion(mac, recv, total, bytes_recv)
+        self.com = Envio_recibo_frames(interfaz=interfaz, progress_callback=progress_callback)
         mac_propia = self.com.mac_ori
         
         # Inicializar nuevos módulos

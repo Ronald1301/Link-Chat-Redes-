@@ -190,6 +190,43 @@ class ChatMinimalTkinter:
         """Actualiza la barra de estado"""
         self.status_label.config(text=mensaje)
 
+    def mostrar_progreso_envio(self, nombre_archivo, fragmentos_enviados, total_fragmentos, bytes_enviados=None):
+        """Muestra progreso de envío de archivo"""
+        progreso = (fragmentos_enviados / total_fragmentos) * 100 if total_fragmentos > 0 else 0
+        
+        if bytes_enviados:
+            mb_enviados = bytes_enviados / (1024 * 1024)
+            mensaje_progreso = f"📤 Enviando {nombre_archivo}: {progreso:.1f}% ({fragmentos_enviados}/{total_fragmentos} fragmentos, {mb_enviados:.1f} MB)"
+        else:
+            mensaje_progreso = f"📤 Enviando {nombre_archivo}: {progreso:.1f}% ({fragmentos_enviados}/{total_fragmentos} fragmentos)"
+        
+        # Actualizar barra de estado
+        self.actualizar_estado(mensaje_progreso)
+        
+        # También mostrar en chat cada 10%
+        if fragmentos_enviados % max(1, total_fragmentos // 10) == 0 or fragmentos_enviados == total_fragmentos:
+            self.mostrar_mensaje("Sistema", mensaje_progreso)
+
+    def mostrar_progreso_recepcion(self, mac_origen, fragmentos_recibidos, total_fragmentos, bytes_recibidos=None):
+        """Muestra progreso de recepción de archivo"""
+        progreso = (fragmentos_recibidos / total_fragmentos) * 100 if total_fragmentos > 0 else 0
+        
+        # Obtener nombre del remitente
+        nombre_remitente = self.app_state.contactos.get(mac_origen, mac_origen)
+        
+        if bytes_recibidos:
+            mb_recibidos = bytes_recibidos / (1024 * 1024)
+            mensaje_progreso = f"📥 Recibiendo de {nombre_remitente}: {progreso:.1f}% ({fragmentos_recibidos}/{total_fragmentos} fragmentos, {mb_recibidos:.1f} MB)"
+        else:
+            mensaje_progreso = f"📥 Recibiendo de {nombre_remitente}: {progreso:.1f}% ({fragmentos_recibidos}/{total_fragmentos} fragmentos)"
+        
+        # Actualizar barra de estado
+        self.actualizar_estado(mensaje_progreso)
+        
+        # También mostrar en chat cada 10%
+        if fragmentos_recibidos % max(1, total_fragmentos // 10) == 0 or fragmentos_recibidos == total_fragmentos:
+            self.mostrar_mensaje("Sistema", mensaje_progreso)
+
     def actualizar_destinos(self):
         """Actualiza la lista de destinos disponibles"""
         try:

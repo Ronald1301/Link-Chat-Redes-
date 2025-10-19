@@ -17,8 +17,26 @@ class FileTransfer:
             nombre_archivo = os.path.basename(file_path)
             tamaño_archivo = os.path.getsize(file_path)
             
-            # Leer archivo completo en memoria (para archivos pequeños/medianos)
-            # Para archivos muy grandes, se podría leer en partes más grandes
+            print(f"📤 Iniciando envío de archivo {nombre_archivo} ({tamaño_archivo} bytes)")
+            
+            # Verificar si es un archivo muy grande (> 100MB)
+            if tamaño_archivo > 100 * 1024 * 1024:
+                print(f"⚠️ Archivo grande detectado ({tamaño_archivo / (1024*1024):.1f} MB)")
+                print(f"📊 Se generarán aproximadamente {tamaño_archivo // 1475} fragmentos")
+                
+                # Para archivos muy grandes, mostrar advertencia
+                if hasattr(self.chat_app, 'root'):
+                    import tkinter.messagebox as msgbox
+                    respuesta = msgbox.askyesno(
+                        "Archivo Grande",
+                        f"El archivo {nombre_archivo} es grande ({tamaño_archivo / (1024*1024):.1f} MB).\n"
+                        f"La transferencia puede tomar varios minutos.\n"
+                        f"¿Desea continuar?"
+                    )
+                    if not respuesta:
+                        return False, "Transferencia cancelada por el usuario"
+            
+            # Leer archivo completo en memoria
             with open(file_path, 'rb') as f:
                 contenido_archivo = f.read()
             
@@ -26,24 +44,28 @@ class FileTransfer:
             metadata = f"FILE_TRANSFER:{nombre_archivo}:{tamaño_archivo}:".encode('utf-8')
             mensaje_completo = metadata + contenido_archivo
             
-            print(f" Enviando archivo {nombre_archivo} ({tamaño_archivo} bytes)")
+            print(f"📤 Creando frames para archivo {nombre_archivo}...")
             
             # Usar el sistema unificado de fragmentación de frames
-            # El sistema automáticamente fragmentará si es necesario
-            # No pasamos nombre_archivo como parámetro separado porque ya está en el mensaje
             frames = self.chat_app.com.crear_frame(
                 dest_mac,
                 Tipo_Mensaje.archivo.value,
                 mensaje_completo
             )
             
-            # Enviar todos los frames (frames ya es una lista de bytes)
-            self.chat_app.com.enviar_archivo(frames)
-            print(f"Archivo {nombre_archivo} enviado en {len(frames)} frame(s)")
+            print(f"📤 Enviando {len(frames)} frames...")
+            
+            # Enviar todos los frames con callback de progreso
+            progress_callback = lambda archivo, enviados, total, bytes_env: self.chat_app.mostrar_progreso_envio(archivo, enviados, total, bytes_env)
+            self.chat_app.com.enviar_archivo(frames, progress_callback=progress_callback, archivo_nombre=nombre_archivo)
+            print(f"✅ Archivo {nombre_archivo} enviado en {len(frames)} frame(s)")
             
             return True, f"Archivo {nombre_archivo} enviado exitosamente"
             
         except Exception as e:
+            import traceback
+            error_detail = traceback.format_exc()
+            print(f"❌ Error detallado enviando archivo: {error_detail}")
             return False, f"Error enviando archivo: {str(e)}"
     
     def receive_file(self, mensaje, source_mac):
@@ -170,46 +192,52 @@ class FileTransfer:
     def _procesar_archivo_unificado_bytes(self, mensaje: bytes, source_mac: str):
         """Procesa archivo con formato FILE_TRANSFER: desde bytes (preserva datos binarios)"""
         try:
+            print(f"📥 Procesando archivo unificado desde {source_mac}")
+            print(f"📊 Tamaño total del mensaje: {len(mensaje)} bytes")
+            
             # Buscar el fin del header para extraer metadatos
             header_end = mensaje.find(b':', 14)  # Buscar después de "FILE_TRANSFER:"
             if header_end == -1:
-                print("Error: Formato FILE_TRANSFER inválido")
+                print("❌ Error: Formato FILE_TRANSFER inválido - no se encontró separador de nombre")
                 return
             
             # Extraer nombre del archivo
             nombre_archivo = mensaje[14:header_end].decode('utf-8')
+            print(f"📁 Nombre del archivo: {nombre_archivo}")
             
             # Buscar el siguiente ':'
             size_start = header_end + 1
             size_end = mensaje.find(b':', size_start)
             if size_end == -1:
-                print(" Error: Formato FILE_TRANSFER inválido (tamaño)")
+                print("❌ Error: Formato FILE_TRANSFER inválido - no se encontró separador de tamaño")
                 return
             
             # Extraer tamaño del archivo
             tamaño_archivo = int(mensaje[size_start:size_end].decode('utf-8'))
+            print(f"📏 Tamaño esperado: {tamaño_archivo} bytes ({tamaño_archivo / (1024*1024):.1f} MB)")
             
             # El contenido empieza después del último ':'
             contenido_inicio = size_end + 1
             contenido_archivo = mensaje[contenido_inicio:]
             
-            print(f" Archivo recibido: {nombre_archivo}")
-            print(f"   → Tamaño esperado: {tamaño_archivo} bytes")
-            print(f"   → Tamaño recibido: {len(contenido_archivo)} bytes")
+            print(f"📏 Tamaño recibido: {len(contenido_archivo)} bytes ({len(contenido_archivo) / (1024*1024):.1f} MB)")
+            print(f"📊 Metadata ocupa: {contenido_inicio} bytes")
             
             # Verificar integridad del tamaño
             if len(contenido_archivo) == tamaño_archivo:
+                print(f"✅ Integridad verificada - guardando archivo")
                 # Guardar archivo directamente
                 self._guardar_archivo_directo(nombre_archivo, contenido_archivo, source_mac)
             else:
-                error_msg = f"Error: Tamaño de archivo incorrecto. Esperado: {tamaño_archivo}, Recibido: {len(contenido_archivo)}"
-                print(f" {error_msg}")
+                diferencia = len(contenido_archivo) - tamaño_archivo
+                error_msg = f"❌ Tamaño incorrecto. Esperado: {tamaño_archivo}, Recibido: {len(contenido_archivo)} (diferencia: {diferencia} bytes)"
+                print(error_msg)
                 if hasattr(self.chat_app, 'root'):
                     self.chat_app.root.after(100, 
                         lambda: self.chat_app.mostrar_mensaje("Error", error_msg))
         
         except Exception as e:
-            print(f" Error procesando archivo desde bytes: {e}")
+            print(f"❌ Error procesando archivo desde bytes: {e}")
             import traceback
             traceback.print_exc()
 

@@ -11,8 +11,14 @@ class FileTransferHandler:
 
     def seleccionar_archivo(self):
         """Selecciona un archivo para enviar"""
+        # Intentar usar la carpeta shared_files como directorio inicial
+        initial_dir = "/app/shared_files"
+        if not os.path.exists(initial_dir):
+            initial_dir = os.getcwd()
+            
         file_path = filedialog.askopenfilename(
-            title="Seleccionar archivo para enviar"
+            title="Seleccionar archivo para enviar",
+            initialdir=initial_dir
         )
         
         if file_path:
@@ -20,8 +26,16 @@ class FileTransferHandler:
             nombre_archivo = os.path.basename(file_path)
             tamaño_archivo = os.path.getsize(file_path)
             tamaño_mb = tamaño_archivo / (1024 * 1024)
+            tamaño_gb = tamaño_archivo / (1024 * 1024 * 1024)
             
-            texto = f"Archivo: {nombre_archivo} ({tamaño_mb:.1f} MB)"
+            # Mostrar tamaño apropiadamente
+            if tamaño_gb >= 1:
+                texto = f"Archivo: {nombre_archivo} ({tamaño_gb:.2f} GB)"
+                mensaje_sistema = f"Archivo grande seleccionado: {nombre_archivo} ({tamaño_gb:.2f} GB)"
+            else:
+                texto = f"Archivo: {nombre_archivo} ({tamaño_mb:.1f} MB)"
+                mensaje_sistema = f"Archivo seleccionado: {nombre_archivo} ({tamaño_mb:.1f} MB)"
+            
             self.app.lbl_archivo.config(text=texto)
             self.app.btn_enviar_archivo.config(state=tk.NORMAL)
             
@@ -29,7 +43,13 @@ class FileTransferHandler:
             self.app.btn_enviar_carpeta.config(state=tk.DISABLED)
             self.app.app_state.carpeta_seleccionada = None
             
-            self.app.mostrar_mensaje("Sistema", f"Archivo seleccionado: {nombre_archivo}")
+            self.app.mostrar_mensaje("Sistema", mensaje_sistema)
+            
+            # Mostrar estimación de transferencia para archivos grandes
+            if tamaño_gb >= 0.5:  # Mayor a 500MB
+                fragmentos_estimados = tamaño_archivo // 1475  # Tamaño aproximado de fragmento
+                tiempo_estimado = fragmentos_estimados * 0.01  # Estimación muy aproximada
+                self.app.mostrar_mensaje("Sistema", f"⏱️ Transferencia estimada: ~{tiempo_estimado:.0f} segundos ({fragmentos_estimados:,} fragmentos)")
 
     def seleccionar_carpeta(self):
         """Selecciona una carpeta para enviar"""

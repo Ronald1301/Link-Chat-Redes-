@@ -63,10 +63,10 @@ WORKDIR /app
 COPY . .
 
 # Crear directorios necesarios
-RUN mkdir -p downloads LinkChat_Files
+RUN mkdir -p downloads shared_files
 
 # Script de inicio que acepta interfaz como parámetro
-RUN echo '#!/bin/bash\nINTERFACE=${1:-eth0}\necho "Contenedor iniciado - Interfaz disponible: $INTERFACE"\necho "Para iniciar la aplicación ejecuta: python app_new.py"\necho "Entrando en modo interactivo..."\n/bin/bash' > /app/start.sh
+RUN echo '#!/bin/bash\nINTERFACE=${1:-eth0}\necho "=== LINK-CHAT DOCKER ==="\necho "Contenedor iniciado - Interfaz disponible: $INTERFACE"\necho "Directorios disponibles:"\necho "  - /app/shared_files (archivos compartidos del host)"\necho "  - /app/downloads (archivos recibidos por transferencias)"\necho ""\necho "Para listar archivos compartidos: ls -la shared_files/"\necho "Para iniciar la aplicación: python app_new.py"\necho "========================"\necho "Entrando en modo interactivo..."\n/bin/bash' > /app/start.sh
 RUN chmod +x /app/start.sh
 
 # Mantener el contenedor activo en modo interactivo

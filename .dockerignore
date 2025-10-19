@@ -1,0 +1,24 @@
+# ===== DOCKERIGNORE OPTIMIZADO =====
+# Excluir TODA la carpeta compartida del build context
+# Los archivos se montarán como volumen, no se copian a la imagen
+shared_test_files/
+
+# Excluir directorios de desarrollo
+.git/
+.vscode/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Excluir archivos de log y temporales  
+*.log
+*.tmp
+*.temp
+
+# Excluir descargas individuales de contenedores
+downloads/
+
+# Mantener solo los archivos necesarios para la aplicación
+# Todo lo demás se monta como volumen

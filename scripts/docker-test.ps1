@@ -76,18 +76,20 @@ function Create-Containers {
     docker stop link-chat-node-1 link-chat-node-2 link-chat-node-3 2>$null
     docker rm link-chat-node-1 link-chat-node-2 link-chat-node-3 2>$null
     
-    $containers = @(
-        @{Name = "link-chat-node-1"; DisplayName = "Nodo Principal"; IP = "192.168.100.10"; VolumeDir = "downloads1"},
-        @{Name = "link-chat-node-2"; DisplayName = "Nodo Secundario"; IP = "192.168.100.11"; VolumeDir = "downloads2"},
-        @{Name = "link-chat-node-3"; DisplayName = "Nodo Terciario"; IP = "192.168.100.12"; VolumeDir = "downloads3"}
-    )
-    
-    foreach ($container in $containers) {
-        $downloadPath = ".\downloads\$($container.VolumeDir)"
-        if (-not (Test-Path $downloadPath)) {
-            New-Item -ItemType Directory -Path $downloadPath -Force | Out-Null
-        }
+    # Verificar que existe la carpeta compartida
+    $sharedFolder = "C:\LinkChat_SharedFiles"
+    if (-not (Test-Path $sharedFolder)) {
+        Write-Error "La carpeta compartida '$sharedFolder' no existe"
+        return $false
     }
+    
+    Write-Info "Usando carpeta compartida: $sharedFolder"
+    
+    $containers = @(
+        @{Name = "link-chat-node-1"; DisplayName = "Nodo Principal"; IP = "192.168.100.10"},
+        @{Name = "link-chat-node-2"; DisplayName = "Nodo Secundario"; IP = "192.168.100.11"},
+        @{Name = "link-chat-node-3"; DisplayName = "Nodo Terciario"; IP = "192.168.100.12"}
+    )
     
     foreach ($container in $containers) {
         Write-Info "Creando $($container.DisplayName)..."
@@ -100,7 +102,7 @@ function Create-Containers {
             "--cap-add", "NET_RAW",
             "--cap-add", "NET_ADMIN", 
             "--cap-add", "SYS_ADMIN",
-            "-v", "$(Get-Location)\downloads\$($container.VolumeDir):/app/downloads",
+            "-v", "${sharedFolder}:/app/shared_files",
             "-e", "NODE_NAME=$($container.DisplayName)",
             "-e", "DISPLAY=host.docker.internal:0.0",
             "-it", "link-chat"

@@ -48,7 +48,7 @@ class Frame:
 
     @classmethod
     def desde_bytes(cls, data:bytes) -> 'Frame':
-        if len(data) < 25:
+        if len(data) < 29:  # Aumentado por campos más grandes
             raise ValueError("Frame invalido")
             
         frame = cls()
@@ -66,16 +66,16 @@ class Frame:
         
         frame.tipo_mensaje = Tipo_Mensaje.from_value(data[14])
         frame.id_mensaje = int.from_bytes(data[15:17], 'big')
-        frame.fragmento = data[17]
-        frame.total_fragmentos = data[18]
-        frame.longitud = int.from_bytes(data[19:21], 'big')
+        frame.fragmento = int.from_bytes(data[17:21], 'big')  # Expandido a 4 bytes (0-4 billones)
+        frame.total_fragmentos = int.from_bytes(data[21:25], 'big')  # Expandido a 4 bytes
+        frame.longitud = int.from_bytes(data[25:27], 'big')
 
-        # Extraer payload (sin incluir CRC)
-        payload = 21 + frame.longitud
+        # Extraer payload (sin incluir CRC) - ajustado por nuevos campos
+        payload = 27 + frame.longitud  # Ajustado por los campos expandidos
         if payload > len(data) - 4:
             raise ValueError("Longitud del payload inconsistente")
             
-        frame.datos = data[21:payload]
+        frame.datos = data[27:payload]
         
         return frame
     
@@ -98,14 +98,20 @@ class Frame:
         length_bytes = len(payload_bytes).to_bytes(2, 'big')  
         msg_type_byte = self.tipo_mensaje.value if isinstance(self.tipo_mensaje, Enum) else int(self.tipo_mensaje)
         
+        # Verificar que los valores no excedan los límites
+        if self.fragmento > 0xFFFFFFFF:  # 4 bytes máximo
+            raise ValueError(f"Número de fragmento demasiado grande: {self.fragmento}")
+        if self.total_fragmentos > 0xFFFFFFFF:  # 4 bytes máximo  
+            raise ValueError(f"Total de fragmentos demasiado grande: {self.total_fragmentos}")
+            
         frame_no_crc = (
             bytes.fromhex(self.mac_destino.replace(":", ""))+
             bytes.fromhex(self.mac_origen.replace(":", "")) +
             self.tipo +
             msg_type_byte.to_bytes(1, 'big') + #.to_bytes(1, 'big') +
             self.id_mensaje.to_bytes(2, 'big') +
-            self.fragmento.to_bytes(1, 'big') +
-            self.total_fragmentos.to_bytes(1, 'big') +
+            self.fragmento.to_bytes(4, 'big') +  # Expandido a 4 bytes
+            self.total_fragmentos.to_bytes(4, 'big') +  # Expandido a 4 bytes
             length_bytes +
             payload_bytes
         )
@@ -125,7 +131,7 @@ class Frame:
         
     def verify_crc(self, frame_data: bytes) -> bool:
         """Verifica el CRC del frame"""
-        if len(frame_data) < 25:
+        if len(frame_data) < 29:  # Actualizado por campos más grandes
             return False
             
         frame_without_crc = frame_data[:-4]
